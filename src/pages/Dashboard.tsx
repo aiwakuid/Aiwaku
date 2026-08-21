@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowUpRight, CalendarPlus, ChevronRight, CircleAlert, PackageCheck, Plus, ShoppingCart, Sparkles, UsersRound } from 'lucide-react'
+import { ArrowUpRight, CalendarPlus, ChevronRight, AlertCircle, PackageCheck, Plus, ShoppingCart, Sparkles, UsersRound } from 'lucide-react'
 import { useMenus } from '../hooks/useMenus'
 import { loadOrders } from '../lib/storage'
 import { format, isSameDay, subDays } from 'date-fns'
@@ -62,7 +62,7 @@ export function Dashboard() {
           </div>
           <div className="mt-5 space-y-3">
             <Insight icon={<ArrowUpRight size={16}/>} tone="green" title="Penjualan berjalan baik" text={`${todayOrders.length} transaksi tercatat hari ini${revenue ? ` dengan total ${money(revenue)}` : ''}.`} />
-            <Insight icon={<CircleAlert size={16}/>} tone={lowStock.length ? 'amber' : 'green'} title={lowStock.length ? 'Stok perlu perhatian' : 'Stok aman'} text={lowStock.length ? `${lowStock.length} menu tinggal 5 porsi atau kurang.` : 'Tidak ada menu aktif dengan stok kritis.'} action={lowStock.length ? 'Atur stok' : undefined} />
+            <Insight icon={<AlertCircle size={16}/>} tone={lowStock.length ? 'amber' : 'green'} title={lowStock.length ? 'Stok perlu perhatian' : 'Stok aman'} text={lowStock.length ? `${lowStock.length} menu tinggal 5 porsi atau kurang.` : 'Tidak ada menu aktif dengan stok kritis.'} action={lowStock.length ? 'Atur stok' : undefined} />
             <Insight icon={<UsersRound size={16}/>} tone="blue" title="Pelanggan tetap terpantau" text={customers ? `${customers} pelanggan bertransaksi hari ini.` : 'Belum ada transaksi pelanggan hari ini.'} />
           </div>
         </div>

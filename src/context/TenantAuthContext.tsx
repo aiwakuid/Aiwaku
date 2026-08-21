@@ -42,7 +42,11 @@ export function TenantAuthProvider({ children }: { children: ReactNode }) {
         .eq('user_id', auth.user.id)
         .order('created_at', { ascending: true })
       const { data } = await query
-      const rows = (data || []) as TenantMembership[]
+      type RawRow = { tenant_id: string; user_id: string; role: TenantMembership['role']; tenant: TenantMembership['tenant'][] | TenantMembership['tenant'] | null }
+      const rows = ((data || []) as unknown as RawRow[]).map(r => ({
+        ...r,
+        tenant: Array.isArray(r.tenant) ? r.tenant[0] : r.tenant ?? undefined,
+      })) as TenantMembership[]
       const match = requestedSlug ? rows.find(m => m.tenant?.slug === requestedSlug) : rows[0]
       setMembership(match ?? null)
     } else {

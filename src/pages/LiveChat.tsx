@@ -38,7 +38,7 @@ export function LiveChat() {
   }, [customers])
 
   useEffect(() => {
-    if (activeId) setMessages(loadThread(tenantId, activeId))
+    if (activeId && tenantId) setMessages(loadThread(tenantId, activeId))
   }, [activeId])
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])

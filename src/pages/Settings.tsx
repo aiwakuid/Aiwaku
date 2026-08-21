@@ -4,9 +4,11 @@ import { useParams } from 'react-router-dom'
 import { getCalendarIntegrationStatus } from '../lib/googleCalendar'
 import { getSheetsIntegrationStatus } from '../lib/googleSheets'
 import { getAuditLogs } from '../lib/auditLog'
+import { useTenantAuth } from '../context/TenantAuthContext'
 
 export function Settings() {
   const { slug } = useParams()
+  const { tenantId } = useTenantAuth()
   const [sheetsUrl, setSheetsUrl] = useState('')
   const [qrisUrl, setQrisUrl] = useState('')
   const [calStatus, setCalStatus] = useState(getCalendarIntegrationStatus())
@@ -18,7 +20,7 @@ export function Settings() {
     setQrisUrl(localStorage.getItem('aiwaku_qris_url') || '')
     setCalStatus(getCalendarIntegrationStatus())
     setSheetStatus(getSheetsIntegrationStatus())
-    setAuditCount(getAuditLogs().length)
+    if (tenantId) setAuditCount(getAuditLogs(tenantId).length)
   }, [])
 
   const saveSheets = () => {
@@ -61,7 +63,7 @@ export function Settings() {
       <div className="bg-white rounded-2xl border p-4">
         <div className="font-bold text-[13px]">Audit Log - {auditCount} events</div>
         <div className="mt-3 max-h-[200px] overflow-y-auto text-[11px] font-mono space-y-1">
-          {getAuditLogs().slice(0,20).map(log=>(
+          {(tenantId ? getAuditLogs(tenantId) : []).slice(0,20).map(log=>(
             <div key={log.id} className="flex gap-2 border-b py-1"><span className="opacity-60">{new Date(log.timestamp).toLocaleTimeString('id-ID')}</span><span className="font-bold">{log.action}</span><span>{log.entity}/{log.entity_id}</span></div>
           ))}
         </div>

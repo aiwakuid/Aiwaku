@@ -44,7 +44,7 @@ export function Invoice() {
     const pickup = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
     pickup.setHours(15, 0, 0, 0)
     const order = await createOrderServer({
-      tenantId: activeTenantId, customerName: customer, customerWa,
+      tenantId: activeTenantId, customerName: customer, customerWa: wa,
       items: [{ menuId: bakeryMenu.id, quantity: 1 }], discount: 10000, tax: 0, pickupTime: pickup.toISOString()
     }) as Order
     const newOrders = [order, ...orders.filter(o => o.id !== order.id)]
