@@ -1,0 +1,274 @@
+diff -ru aiwaku-original/Aiwaku-main/src/App.tsx Aiwaku-main/src/App.tsx
+--- aiwaku-original/Aiwaku-main/src/App.tsx	2026-08-21 04:37:37.000000000 +0000
++++ Aiwaku-main/src/App.tsx	2026-08-22 07:32:53.416807854 +0000
+@@ -20,6 +20,7 @@
+ import { Tables } from './pages/Tables'
+ import { Inventory } from './pages/Inventory'
+ import { AuthTenantGuard } from './components/AuthTenantGuard'
++import { AdminRouteGuard } from './components/AdminRouteGuard'
+ import { Login } from './pages/Login'
+ 
+ // Satu layout untuk root dan /t/:slug (sebelumnya TenantLayout & RootLayout duplikat)
+@@ -50,7 +51,7 @@
+             <Route path="kds" element={<KDS />} />
+             <Route path="tables" element={<Tables />} />
+             <Route path="inventory" element={<Inventory />} />
+-            <Route path="admin" element={<AdminControl />} />
++            <Route path="admin" element={<AdminRouteGuard><AdminControl /></AdminRouteGuard>} />
+             <Route path="livechat" element={<LiveChat />} />
+             <Route path="calendar" element={<Calendar />} />
+             <Route path="bookings" element={<Bookings />} />
+Only in Aiwaku-main/src/components: AdminRouteGuard.tsx
+diff -ru aiwaku-original/Aiwaku-main/src/components/Sidebar.tsx Aiwaku-main/src/components/Sidebar.tsx
+--- aiwaku-original/Aiwaku-main/src/components/Sidebar.tsx	2026-08-21 04:37:37.000000000 +0000
++++ Aiwaku-main/src/components/Sidebar.tsx	2026-08-22 07:33:09.253345721 +0000
+@@ -1,9 +1,16 @@
+-import { NavLink, useParams } from 'react-router-dom'
+-import { LayoutDashboard, ShoppingCart, Package, PackagePlus, Users, BarChart3, Settings2, CalendarDays, Receipt, Bot, ChefHat, Table2 } from 'lucide-react'
++import { NavLink, useParams, useNavigate } from 'react-router-dom'
++import { LayoutDashboard, ShoppingCart, Package, PackagePlus, Users, BarChart3, Settings2, CalendarDays, Receipt, Bot, ChefHat, Table2, LogOut } from 'lucide-react'
++import { useTenantAuth } from '../context/TenantAuthContext'
+ 
+ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean, onClose: () => void }) {
+   const { slug } = useParams()
+   const basePath = slug ? `/t/${slug}` : ''
++  const { signOut } = useTenantAuth()
++  const navigate = useNavigate()
++  const handleLogout = async () => {
++    await signOut()
++    navigate('/login', { replace: true })
++  }
+   const groups = [
+     { title: 'Utama', items: [
+       { to: `${basePath}/`, label: 'Beranda', icon: LayoutDashboard, end: true },
+@@ -47,11 +54,15 @@
+             </div>
+           ))}
+         </div>
+-        <div className="p-3 border-t border-slate-200/80">
++        <div className="p-3 border-t border-slate-200/80 space-y-2">
+           <div className="rounded-2xl bg-slate-950 text-white p-3.5">
+             <div className="flex items-center gap-2 text-[12px] font-bold"><span className="w-2 h-2 rounded-full bg-emerald-400" /> AIWAKU siap membantu</div>
+             <div className="mt-1.5 text-[10px] leading-4 text-white/60">Tanya penjualan, stok, pelanggan, atau minta AIWAKU mengerjakan sesuatu.</div>
+           </div>
++          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 h-10 rounded-xl text-[13px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-red-600 transition-all">
++            <LogOut size={17} strokeWidth={1.9} />
++            <span>Keluar</span>
++          </button>
+         </div>
+       </aside>
+     </>
+diff -ru aiwaku-original/Aiwaku-main/src/context/TenantAuthContext.tsx Aiwaku-main/src/context/TenantAuthContext.tsx
+--- aiwaku-original/Aiwaku-main/src/context/TenantAuthContext.tsx	2026-08-21 04:37:37.000000000 +0000
++++ Aiwaku-main/src/context/TenantAuthContext.tsx	2026-08-22 07:32:37.610514925 +0000
+@@ -16,6 +16,19 @@
+   isAuthenticated: boolean
+   canAdmin: boolean
+   refresh: (requestedSlug?: string) => Promise<void>
++  signOut: () => Promise<void>
++}
++
++// Bersihkan localStorage tenant-scoped (aiwaku_v5_*) saat logout,
++// supaya sesi berikutnya (user lain di device yang sama) tidak
++// mewarisi data tenant sebelumnya.
++function clearScopedStorage() {
++  try {
++    const keys = Object.keys(localStorage).filter(k => k.startsWith('aiwaku_v5_'))
++    keys.forEach(k => localStorage.removeItem(k))
++  } catch {
++    // localStorage tidak tersedia (mis. private mode) — abaikan
++  }
+ }
+ 
+ const TenantAuthContext = createContext<TenantAuthValue | null>(null)
+@@ -55,10 +68,28 @@
+     setLoading(false)
+   }, [])
+ 
++  const signOut = useCallback(async () => {
++    if (isSupabaseEnabled()) {
++      await supabase!.auth.signOut()
++    }
++    setUser(null)
++    setMembership(null)
++    clearScopedStorage()
++  }, [])
++
+   useEffect(() => {
+     refresh()
+     if (!isSupabaseEnabled()) return
+-    const { data } = supabase!.auth.onAuthStateChange(() => { void refresh() })
++    const { data } = supabase!.auth.onAuthStateChange((event) => {
++      if (event === 'SIGNED_OUT') {
++        setUser(null)
++        setMembership(null)
++        clearScopedStorage()
++        setLoading(false)
++        return
++      }
++      void refresh()
++    })
+     return () => data.subscription.unsubscribe()
+   }, [refresh])
+ 
+@@ -70,7 +101,8 @@
+     isAuthenticated: !!user && !!membership,
+     canAdmin: membership?.role === 'owner' || membership?.role === 'admin',
+     refresh,
+-  }), [user, membership, loading])
++    signOut,
++  }), [user, membership, loading, signOut])
+ 
+   return <TenantAuthContext.Provider value={value}>{children}</TenantAuthContext.Provider>
+ }
+diff -ru aiwaku-original/Aiwaku-main/src/hooks/useMenus.ts Aiwaku-main/src/hooks/useMenus.ts
+--- aiwaku-original/Aiwaku-main/src/hooks/useMenus.ts	2026-08-21 04:37:37.000000000 +0000
++++ Aiwaku-main/src/hooks/useMenus.ts	2026-08-22 07:33:21.548350674 +0000
+@@ -46,7 +46,9 @@
+     if (!current) return false
+     const next = { ...current, stock: safeStock, is_active: safeStock > 0 ? current.is_active : false, updated_at: new Date().toISOString() }
+     setMenusState(prev => prev.map(m => m.id === menuId ? next : m))
+-    return persist(next)
++    const ok = await persist(next)
++    if (!ok) setMenusState(prev => prev.map(m => m.id === menuId ? current : m))
++    return ok
+   }
+ 
+   const addStock = (menuId: string, delta: number) => {
+@@ -59,7 +61,9 @@
+     if (!current) return false
+     const next = { ...current, is_active: !current.is_active, updated_at: new Date().toISOString() }
+     setMenusState(prev => prev.map(m => m.id === menuId ? next : m))
+-    return persist(next)
++    const ok = await persist(next)
++    if (!ok) setMenusState(prev => prev.map(m => m.id === menuId ? current : m))
++    return ok
+   }
+ 
+   const updatePrice = async (menuId: string, price: number) => {
+@@ -68,7 +72,9 @@
+     if (!current) return false
+     const next = { ...current, price: safePrice, updated_at: new Date().toISOString() }
+     setMenusState(prev => prev.map(m => m.id === menuId ? next : m))
+-    return persist(next)
++    const ok = await persist(next)
++    if (!ok) setMenusState(prev => prev.map(m => m.id === menuId ? current : m))
++    return ok
+   }
+ 
+   const addMenu = async (menu: Omit<Menu, 'id' | 'created_at' | 'updated_at'>) => {
+diff -ru aiwaku-original/Aiwaku-main/src/lib/ordersApi.ts Aiwaku-main/src/lib/ordersApi.ts
+--- aiwaku-original/Aiwaku-main/src/lib/ordersApi.ts	2026-08-21 04:37:37.000000000 +0000
++++ Aiwaku-main/src/lib/ordersApi.ts	2026-08-22 07:33:47.494784253 +0000
+@@ -9,6 +9,12 @@
+   tax?: number
+   pickupTime?: string
+   customText?: string
++  // Kunci idempotensi untuk transaksi ini. Harus dibuat SEKALI di titik
++  // mulai transaksi (mis. saat user menekan tombol bayar) dan dipakai
++  // ulang jika terjadi retry akibat network gagal/timeout — supaya retry
++  // tidak membuat order kedua. Kalau tidak diisi, fallback ke UUID acak
++  // (aman untuk pemanggilan satu-kali tanpa retry).
++  idempotencyKey?: string
+ }
+ 
+ export async function createOrderServer(input: CreateOrderInput) {
+@@ -19,7 +25,7 @@
+   const token = session.session?.access_token
+   if (!token) throw new Error('Sesi login tidak tersedia')
+ 
+-  const idempotencyKey = crypto.randomUUID()
++  const idempotencyKey = input.idempotencyKey || crypto.randomUUID()
+   const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-order`
+   const response = await fetch(url, {
+     method: 'POST',
+diff -ru aiwaku-original/Aiwaku-main/src/pages/Dashboard.tsx Aiwaku-main/src/pages/Dashboard.tsx
+--- aiwaku-original/Aiwaku-main/src/pages/Dashboard.tsx	2026-08-21 04:37:37.000000000 +0000
++++ Aiwaku-main/src/pages/Dashboard.tsx	2026-08-22 07:33:30.805480150 +0000
+@@ -3,6 +3,7 @@
+ import { ArrowUpRight, CalendarPlus, ChevronRight, AlertCircle, PackageCheck, Plus, ShoppingCart, Sparkles, UsersRound } from 'lucide-react'
+ import { useMenus } from '../hooks/useMenus'
+ import { loadOrders } from '../lib/storage'
++import { useTenantAuth } from '../context/TenantAuthContext'
+ import { format, isSameDay, subDays } from 'date-fns'
+ import { id as idLocale } from 'date-fns/locale'
+ 
+@@ -10,8 +11,9 @@
+ 
+ export function Dashboard() {
+   const { slug } = useParams()
+-  const { menus } = useMenus()
+-  const orders = loadOrders()
++  const { tenantId } = useTenantAuth()
++  const { menus } = useMenus(tenantId ?? undefined)
++  const orders = loadOrders(tenantId ?? undefined)
+   const now = new Date()
+   const todayOrders = useMemo(() => orders.filter(o => isSameDay(new Date(o.created_at), now) && o.status !== 'batal'), [orders])
+   const revenue = todayOrders.reduce((sum, o) => sum + o.total, 0)
+diff -ru aiwaku-original/Aiwaku-main/src/pages/POS.tsx Aiwaku-main/src/pages/POS.tsx
+--- aiwaku-original/Aiwaku-main/src/pages/POS.tsx	2026-08-21 04:37:37.000000000 +0000
++++ Aiwaku-main/src/pages/POS.tsx	2026-08-22 07:34:19.734543052 +0000
+@@ -1,4 +1,4 @@
+-import { useEffect, useMemo, useState } from 'react'
++import { useEffect, useMemo, useRef, useState } from 'react'
+ import { Check, Minus, Plus, Search, ShoppingBag, Trash2, X, Zap } from 'lucide-react'
+ import { useMenus } from '../hooks/useMenus'
+ import { useTenantAuth } from '../context/TenantAuthContext'
+@@ -30,6 +30,10 @@
+   const [message, setMessage] = useState<string | null>(null)
+   const [qris, setQris] = useState<{ paymentId: string; paymentUrl?: string; invoiceNo?: string; amount: number } | null>(null)
+   const [qrisStatus, setQrisStatus] = useState<'pending'|'paid'|'expired'|'failed'>('pending')
++  // Dibuat sekali per percobaan transaksi, dipakai ulang kalau submit()
++  // di-retry (network gagal) supaya tidak membuat order duplikat.
++  // Direset ke null setelah order berhasil dibuat.
++  const idempotencyKeyRef = useRef<string | null>(null)
+ 
+   const categories = useMemo(() => ['all', ...Array.from(new Set(menus.map(m => m.niche)))], [menus])
+   const visibleMenus = useMemo(() => menus.filter(m => {
+@@ -63,6 +67,7 @@
+ 
+   function add(menuId: string) {
+     setMessage(null)
++    idempotencyKeyRef.current = null // cart berubah = transaksi baru, bukan retry
+     setCart(prev => {
+       const found = prev.find(x => x.menuId === menuId)
+       if (found) return prev.map(x => x.menuId === menuId ? { ...x, quantity: x.quantity + 1 } : x)
+@@ -71,6 +76,7 @@
+   }
+ 
+   function change(menuId: string, delta: number) {
++    idempotencyKeyRef.current = null // cart berubah = transaksi baru, bukan retry
+     setCart(prev => prev.flatMap(x => x.menuId !== menuId ? [x] : x.quantity + delta <= 0 ? [] : [{ ...x, quantity: x.quantity + delta }]))
+   }
+ 
+@@ -78,6 +84,7 @@
+     if (!cart.length || busy) return
+     setBusy(true)
+     setMessage(null)
++    if (!idempotencyKeyRef.current) idempotencyKeyRef.current = crypto.randomUUID()
+     try {
+       const order = await createOrderServer({
+         tenantId,
+@@ -87,7 +94,11 @@
+         discount: 0,
+         tax: 0,
+         customText: JSON.stringify({ mode, table: mode === 'dine-in' ? table : null }),
++        idempotencyKey: idempotencyKeyRef.current,
+       })
++      // Order berhasil dibuat (atau sudah ada dari attempt sebelumnya berkat
++      // idempotency key) — reset key untuk transaksi berikutnya.
++      idempotencyKeyRef.current = null
+       if (payment === 'cash') {
+         await recordCashPayment(order.id, total)
+         setMessage(`Pesanan ${order?.invoice_no || 'berhasil'} selesai. Pembayaran tunai sudah lunas.`)
+@@ -101,6 +112,9 @@
+       setCustomerName('')
+       setCustomerWa('')
+     } catch (error) {
++      // idempotencyKeyRef TIDAK direset di sini — kalau user klik "Bayar"
++      // lagi setelah error (mis. timeout), kita pakai key yang sama supaya
++      // create-order tidak membuat order kedua untuk transaksi yang sama.
+       setMessage(error instanceof Error ? error.message : 'Pesanan belum berhasil dibuat. Coba lagi.')
+     } finally {
+       setBusy(false)
+Only in Aiwaku-main/supabase/migrations: 20260822_v57_security_hardening.sql
