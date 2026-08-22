@@ -1,9 +1,16 @@
-import { NavLink, useParams } from 'react-router-dom'
-import { LayoutDashboard, ShoppingCart, Package, PackagePlus, Users, BarChart3, Settings2, CalendarDays, Receipt, Bot, ChefHat, Table2 } from 'lucide-react'
+import { NavLink, useParams, useNavigate } from 'react-router-dom'
+import { LayoutDashboard, ShoppingCart, Package, PackagePlus, Users, BarChart3, Settings2, CalendarDays, Receipt, Bot, ChefHat, Table2, LogOut } from 'lucide-react'
+import { useTenantAuth } from '../context/TenantAuthContext'
 
 export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean, onClose: () => void }) {
   const { slug } = useParams()
   const basePath = slug ? `/t/${slug}` : ''
+  const { signOut } = useTenantAuth()
+  const navigate = useNavigate()
+  const handleLogout = async () => {
+    await signOut()
+    navigate('/login', { replace: true })
+  }
   const groups = [
     { title: 'Utama', items: [
       { to: `${basePath}/`, label: 'Beranda', icon: LayoutDashboard, end: true },
@@ -47,11 +54,15 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean, onClose:
             </div>
           ))}
         </div>
-        <div className="p-3 border-t border-slate-200/80">
+        <div className="p-3 border-t border-slate-200/80 space-y-2">
           <div className="rounded-2xl bg-slate-950 text-white p-3.5">
             <div className="flex items-center gap-2 text-[12px] font-bold"><span className="w-2 h-2 rounded-full bg-emerald-400" /> AIWAKU siap membantu</div>
             <div className="mt-1.5 text-[10px] leading-4 text-white/60">Tanya penjualan, stok, pelanggan, atau minta AIWAKU mengerjakan sesuatu.</div>
           </div>
+          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 h-10 rounded-xl text-[13px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-red-600 transition-all">
+            <LogOut size={17} strokeWidth={1.9} />
+            <span>Keluar</span>
+          </button>
         </div>
       </aside>
     </>

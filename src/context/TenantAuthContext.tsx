@@ -16,6 +16,19 @@ type TenantAuthValue = {
   isAuthenticated: boolean
   canAdmin: boolean
   refresh: (requestedSlug?: string) => Promise<void>
+  signOut: () => Promise<void>
+}
+
+// Bersihkan localStorage tenant-scoped (aiwaku_v5_*) saat logout,
+// supaya sesi berikutnya (user lain di device yang sama) tidak
+// mewarisi data tenant sebelumnya.
+function clearScopedStorage() {
+  try {
+    const keys = Object.keys(localStorage).filter(k => k.startsWith('aiwaku_v5_'))
+    keys.forEach(k => localStorage.removeItem(k))
+  } catch {
+    // localStorage tidak tersedia (mis. private mode) — abaikan
+  }
 }
 
 const TenantAuthContext = createContext<TenantAuthValue | null>(null)
@@ -55,10 +68,28 @@ export function TenantAuthProvider({ children }: { children: ReactNode }) {
     setLoading(false)
   }, [])
 
+  const signOut = useCallback(async () => {
+    if (isSupabaseEnabled()) {
+      await supabase!.auth.signOut()
+    }
+    setUser(null)
+    setMembership(null)
+    clearScopedStorage()
+  }, [])
+
   useEffect(() => {
     refresh()
     if (!isSupabaseEnabled()) return
-    const { data } = supabase!.auth.onAuthStateChange(() => { void refresh() })
+    const { data } = supabase!.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setUser(null)
+        setMembership(null)
+        clearScopedStorage()
+        setLoading(false)
+        return
+      }
+      void refresh()
+    })
     return () => data.subscription.unsubscribe()
   }, [refresh])
 
@@ -70,7 +101,8 @@ export function TenantAuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: !!user && !!membership,
     canAdmin: membership?.role === 'owner' || membership?.role === 'admin',
     refresh,
-  }), [user, membership, loading])
+    signOut,
+  }), [user, membership, loading, signOut])
 
   return <TenantAuthContext.Provider value={value}>{children}</TenantAuthContext.Provider>
 }
