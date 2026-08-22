@@ -20,6 +20,7 @@ import { KDS } from './pages/KDS'
 import { Tables } from './pages/Tables'
 import { Inventory } from './pages/Inventory'
 import { AuthTenantGuard } from './components/AuthTenantGuard'
+import { AdminRouteGuard } from './components/AdminRouteGuard'
 import { Login } from './pages/Login'
 
 // Satu layout untuk root dan /t/:slug (sebelumnya TenantLayout & RootLayout duplikat)
@@ -50,7 +51,7 @@ function Layout() {
             <Route path="kds" element={<KDS />} />
             <Route path="tables" element={<Tables />} />
             <Route path="inventory" element={<Inventory />} />
-            <Route path="admin" element={<AdminControl />} />
+            <Route path="admin" element={<AdminRouteGuard><AdminControl /></AdminRouteGuard>} />
             <Route path="livechat" element={<LiveChat />} />
             <Route path="calendar" element={<Calendar />} />
             <Route path="bookings" element={<Bookings />} />

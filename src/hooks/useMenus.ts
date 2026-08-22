@@ -46,7 +46,9 @@ export function useMenus(tenantId?: string) {
     if (!current) return false
     const next = { ...current, stock: safeStock, is_active: safeStock > 0 ? current.is_active : false, updated_at: new Date().toISOString() }
     setMenusState(prev => prev.map(m => m.id === menuId ? next : m))
-    return persist(next)
+    const ok = await persist(next)
+    if (!ok) setMenusState(prev => prev.map(m => m.id === menuId ? current : m))
+    return ok
   }
 
   const addStock = (menuId: string, delta: number) => {
@@ -59,7 +61,9 @@ export function useMenus(tenantId?: string) {
     if (!current) return false
     const next = { ...current, is_active: !current.is_active, updated_at: new Date().toISOString() }
     setMenusState(prev => prev.map(m => m.id === menuId ? next : m))
-    return persist(next)
+    const ok = await persist(next)
+    if (!ok) setMenusState(prev => prev.map(m => m.id === menuId ? current : m))
+    return ok
   }
 
   const updatePrice = async (menuId: string, price: number) => {
@@ -68,7 +72,9 @@ export function useMenus(tenantId?: string) {
     if (!current) return false
     const next = { ...current, price: safePrice, updated_at: new Date().toISOString() }
     setMenusState(prev => prev.map(m => m.id === menuId ? next : m))
-    return persist(next)
+    const ok = await persist(next)
+    if (!ok) setMenusState(prev => prev.map(m => m.id === menuId ? current : m))
+    return ok
   }
 
   const addMenu = async (menu: Omit<Menu, 'id' | 'created_at' | 'updated_at'>) => {

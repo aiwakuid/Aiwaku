@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { ArrowUpRight, CalendarPlus, ChevronRight, AlertCircle, PackageCheck, Plus, ShoppingCart, Sparkles, UsersRound } from 'lucide-react'
 import { useMenus } from '../hooks/useMenus'
 import { loadOrders } from '../lib/storage'
+import { useTenantAuth } from '../context/TenantAuthContext'
 import { format, isSameDay, subDays } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 
@@ -10,8 +11,9 @@ const money = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency',
 
 export function Dashboard() {
   const { slug } = useParams()
-  const { menus } = useMenus()
-  const orders = loadOrders()
+  const { tenantId } = useTenantAuth()
+  const { menus } = useMenus(tenantId ?? undefined)
+  const orders = loadOrders(tenantId ?? undefined)
   const now = new Date()
   const todayOrders = useMemo(() => orders.filter(o => isSameDay(new Date(o.created_at), now) && o.status !== 'batal'), [orders])
   const revenue = todayOrders.reduce((sum, o) => sum + o.total, 0)

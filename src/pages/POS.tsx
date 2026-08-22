@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Minus, Plus, Search, ShoppingBag, Trash2, X, Zap } from 'lucide-react'
 import { useMenus } from '../hooks/useMenus'
 import { useTenantAuth } from '../context/TenantAuthContext'
@@ -30,6 +30,10 @@ export function POS() {
   const [message, setMessage] = useState<string | null>(null)
   const [qris, setQris] = useState<{ paymentId: string; paymentUrl?: string; invoiceNo?: string; amount: number } | null>(null)
   const [qrisStatus, setQrisStatus] = useState<'pending'|'paid'|'expired'|'failed'>('pending')
+  // Dibuat sekali per percobaan transaksi, dipakai ulang kalau submit()
+  // di-retry (network gagal) supaya tidak membuat order duplikat.
+  // Direset ke null setelah order berhasil dibuat.
+  const idempotencyKeyRef = useRef<string | null>(null)
 
   const categories = useMemo(() => ['all', ...Array.from(new Set(menus.map(m => m.niche)))], [menus])
   const visibleMenus = useMemo(() => menus.filter(m => {
@@ -63,6 +67,7 @@ export function POS() {
 
   function add(menuId: string) {
     setMessage(null)
+    idempotencyKeyRef.current = null // cart berubah = transaksi baru, bukan retry
     setCart(prev => {
       const found = prev.find(x => x.menuId === menuId)
       if (found) return prev.map(x => x.menuId === menuId ? { ...x, quantity: x.quantity + 1 } : x)
@@ -71,6 +76,7 @@ export function POS() {
   }
 
   function change(menuId: string, delta: number) {
+    idempotencyKeyRef.current = null // cart berubah = transaksi baru, bukan retry
     setCart(prev => prev.flatMap(x => x.menuId !== menuId ? [x] : x.quantity + delta <= 0 ? [] : [{ ...x, quantity: x.quantity + delta }]))
   }
 
@@ -78,6 +84,7 @@ export function POS() {
     if (!cart.length || busy) return
     setBusy(true)
     setMessage(null)
+    if (!idempotencyKeyRef.current) idempotencyKeyRef.current = crypto.randomUUID()
     try {
       const order = await createOrderServer({
         tenantId,
@@ -87,7 +94,11 @@ export function POS() {
         discount: 0,
         tax: 0,
         customText: JSON.stringify({ mode, table: mode === 'dine-in' ? table : null }),
+        idempotencyKey: idempotencyKeyRef.current,
       })
+      // Order berhasil dibuat (atau sudah ada dari attempt sebelumnya berkat
+      // idempotency key) — reset key untuk transaksi berikutnya.
+      idempotencyKeyRef.current = null
       if (payment === 'cash') {
         await recordCashPayment(order.id, total)
         setMessage(`Pesanan ${order?.invoice_no || 'berhasil'} selesai. Pembayaran tunai sudah lunas.`)
@@ -101,6 +112,9 @@ export function POS() {
       setCustomerName('')
       setCustomerWa('')
     } catch (error) {
+      // idempotencyKeyRef TIDAK direset di sini — kalau user klik "Bayar"
+      // lagi setelah error (mis. timeout), kita pakai key yang sama supaya
+      // create-order tidak membuat order kedua untuk transaksi yang sama.
       setMessage(error instanceof Error ? error.message : 'Pesanan belum berhasil dibuat. Coba lagi.')
     } finally {
       setBusy(false)

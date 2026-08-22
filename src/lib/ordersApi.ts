@@ -9,6 +9,12 @@ export type CreateOrderInput = {
   tax?: number
   pickupTime?: string
   customText?: string
+  // Kunci idempotensi untuk transaksi ini. Harus dibuat SEKALI di titik
+  // mulai transaksi (mis. saat user menekan tombol bayar) dan dipakai
+  // ulang jika terjadi retry akibat network gagal/timeout — supaya retry
+  // tidak membuat order kedua. Kalau tidak diisi, fallback ke UUID acak
+  // (aman untuk pemanggilan satu-kali tanpa retry).
+  idempotencyKey?: string
 }
 
 export async function createOrderServer(input: CreateOrderInput) {
@@ -19,7 +25,7 @@ export async function createOrderServer(input: CreateOrderInput) {
   const token = session.session?.access_token
   if (!token) throw new Error('Sesi login tidak tersedia')
 
-  const idempotencyKey = crypto.randomUUID()
+  const idempotencyKey = input.idempotencyKey || crypto.randomUUID()
   const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-order`
   const response = await fetch(url, {
     method: 'POST',
