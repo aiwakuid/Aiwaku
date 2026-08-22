@@ -1,9 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-
-const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
+import { buildCorsHeaders } from "../_shared/cors.ts"
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req)
   try {
     if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
     if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405, headers: corsHeaders })
@@ -38,6 +38,21 @@ serve(async (req) => {
 
     if (!member) throw new Error('Forbidden')
 
+    // FASE 2 #10: rate limit sederhana per user per tenant (20 percobaan/menit).
+    const { data: withinLimit, error: rateLimitError } = await admin.rpc('check_rate_limit', {
+      p_subject: `${tenantId}:${auth.user.id}`,
+      p_action: 'create-order',
+      p_limit: 20,
+      p_window_seconds: 60,
+    })
+    if (rateLimitError) throw rateLimitError
+    if (!withinLimit) {
+      return new Response(JSON.stringify({ error: 'Terlalu banyak percobaan. Coba lagi sebentar lagi.' }), {
+        status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     const normalizedItems = items.map((item: any) => ({
       menu_id: String(item.menu_id || item.menuId || ''),
       qty: Math.floor(Number(item.qty ?? item.quantity) || 0)
@@ -45,6 +60,9 @@ serve(async (req) => {
     const key = String(idempotencyKey || crypto.randomUUID())
     if (key.length > 128) throw new Error('Idempotency key terlalu panjang')
 
+    // FASE 2 #13: p_user_id dioper eksplisit karena RPC dipanggil lewat client
+    // service-role (admin) - auth.uid() akan null di konteks itu. Identitas
+    // user sudah diverifikasi di atas lewat caller.auth.getUser() + cek membership.
     const { data, error } = await admin.rpc('create_order_atomic', {
       p_tenant_id: tenantId,
       p_customer_name: String(customerName || '').slice(0, 120),
@@ -54,7 +72,8 @@ serve(async (req) => {
       p_tax: Math.max(0, Math.floor(Number(tax) || 0)),
       p_pickup_time: pickupTime,
       p_custom_text: String(customText || '').slice(0, 500),
-      p_idempotency_key: key
+      p_idempotency_key: key,
+      p_user_id: auth.user.id
     })
 
     if (error) throw error

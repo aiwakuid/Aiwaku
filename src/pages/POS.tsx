@@ -12,6 +12,13 @@ type OrderMode = 'dine-in' | 'takeaway' | 'delivery'
 
 const money = (n: number) => `Rp${n.toLocaleString('id-ID')}`
 
+// FASE 2 #12: persist QRIS in-flight state supaya tidak hilang saat halaman
+// ter-refresh (misalnya kasir tanpa sengaja reload sambil pelanggan masih scan QR).
+// Key per-tenant supaya QRIS in-progress dari tenant lain di device yang sama
+// tidak ketimpa/kebocor.
+type QrisState = { paymentId: string; paymentUrl?: string; invoiceNo?: string; amount: number }
+const qrisStorageKey = (tenantId: string) => `aiwaku:pos:qris:${tenantId}`
+
 export function POS() {
   const { tenantId: authTenantId } = useTenantAuth()
   const { tenant } = useTenant()
@@ -28,12 +35,37 @@ export function POS() {
   const [payment, setPayment] = useState<'cash' | 'qris'>('cash')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const [qris, setQris] = useState<{ paymentId: string; paymentUrl?: string; invoiceNo?: string; amount: number } | null>(null)
+  const [qris, setQris] = useState<QrisState | null>(null)
   const [qrisStatus, setQrisStatus] = useState<'pending'|'paid'|'expired'|'failed'>('pending')
   // Dibuat sekali per percobaan transaksi, dipakai ulang kalau submit()
   // di-retry (network gagal) supaya tidak membuat order duplikat.
   // Direset ke null setelah order berhasil dibuat.
   const idempotencyKeyRef = useRef<string | null>(null)
+
+  // Recovery: kalau ada QRIS pending yang tersimpan dari sebelum refresh, muat lagi.
+  // Status TIDAK dipercaya dari storage — selalu dipaksa 'pending' supaya polling
+  // getPayment() di bawah yang menentukan status sebenarnya.
+  useEffect(() => {
+    if (!tenantId) return
+    try {
+      const raw = sessionStorage.getItem(qrisStorageKey(tenantId))
+      if (!raw) return
+      const saved = JSON.parse(raw) as QrisState
+      if (saved?.paymentId) {
+        setQris(saved)
+        setQrisStatus('pending')
+      }
+    } catch { /* storage rusak/tidak tersedia, abaikan */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId])
+
+  useEffect(() => {
+    if (!tenantId) return
+    try {
+      if (qris) sessionStorage.setItem(qrisStorageKey(tenantId), JSON.stringify(qris))
+      else sessionStorage.removeItem(qrisStorageKey(tenantId))
+    } catch { /* storage rusak/tidak tersedia (mis. private mode), abaikan */ }
+  }, [qris, tenantId])
 
   const categories = useMemo(() => ['all', ...Array.from(new Set(menus.map(m => m.niche)))], [menus])
   const visibleMenus = useMemo(() => menus.filter(m => {
