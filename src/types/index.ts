@@ -1,5 +1,14 @@
 
 export type Niche = 'salon' | 'barbershop' | 'resto' | 'gedung' | 'futsal' | 'padel' | 'bakery'
+  | 'car_wash' | 'spa' | 'klinik_kesehatan' | 'klinik_kecantikan'
+  | 'cafe' | 'dental' | 'hotel_villa' | 'rental_kendaraan' | 'laundry'
+  | 'gym' | 'pet_grooming' | 'karaoke' | 'event_organizer' | 'wedding_organizer'
+  | 'kursus' | 'bengkel' | 'travel_tour'
+
+// Feature key opsional (lihat migration 20260824_v58_registration_niche_features.sql
+// untuk daftar sumber kebenaran di database — feature_catalog).
+// 'queue' sengaja ada di sini walau belum ada halaman-nya (placeholder).
+export type FeatureKey = 'inventory' | 'kds' | 'tables' | 'booking' | 'queue' | 'customers' | 'reports' | 'calendar' | 'catalog'
 
 export interface Tenant {
   id: string
