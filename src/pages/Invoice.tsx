@@ -14,7 +14,7 @@ import type { Order, Payment } from '../types'
 
 export function Invoice() {
   const { slug } = useParams()
-  const tenantSlug = slug || 'bakery-sari'
+  const tenantSlug = slug || ''
   const { tenantId } = useTenantAuth()
   const activeTenantId = tenantId ?? ''
   const { menus } = useMenus(tenantId ?? undefined)
@@ -40,7 +40,7 @@ export function Invoice() {
   if (!tenantId) return null
 
   const createInvoice = async () => {
-    const bakeryMenu = menus.find(m => m.niche === 'bakery' && m.is_active) || menus.find(m => m.is_active)
+    const bakeryMenu = menus.find(m => m.is_active)
     if (!bakeryMenu) { setFormError('Tambahkan menu dulu sebelum bikin invoice.'); return }
     setFormError(null)
     const pickup = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
@@ -68,14 +68,14 @@ export function Invoice() {
 
   const handleDownloadPDF = async () => {
     if (!selected) return
-    const doc = await generateInvoicePDF(selected, slug || 'bakery-sari')
+    const doc = await generateInvoicePDF(selected, slug || '')
     doc.save(`${selected.invoice_no}.pdf`)
     addLog('DOWNLOAD', 'invoice_pdf', selected.id, null, { invoice_no: selected.invoice_no })
   }
 
   const handlePrintStruk = async () => {
     if (!selected) return
-    const doc = await generateStruk80mm(selected, slug || 'bakery-sari')
+    const doc = await generateStruk80mm(selected, slug || '')
     doc.save(`STRUK-${selected.invoice_no}.pdf`)
     addLog('PRINT', 'struk_80mm', selected.id, null, {})
   }
