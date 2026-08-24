@@ -3,7 +3,7 @@ export type Niche = 'salon' | 'barbershop' | 'resto' | 'gedung' | 'futsal' | 'pa
   | 'car_wash' | 'spa' | 'klinik_kesehatan' | 'klinik_kecantikan'
   | 'cafe' | 'dental' | 'hotel_villa' | 'rental_kendaraan' | 'laundry'
   | 'gym' | 'pet_grooming' | 'karaoke' | 'event_organizer' | 'wedding_organizer'
-  | 'kursus' | 'bengkel' | 'travel_tour'
+  | 'kursus' | 'bengkel' | 'travel_tour' | 'lainnya'
 
 // Feature key opsional (lihat migration 20260824_v58_registration_niche_features.sql
 // untuk daftar sumber kebenaran di database — feature_catalog).
@@ -15,6 +15,7 @@ export interface Tenant {
   slug: string
   name: string
   niche: Niche
+  niche_label?: string // wajib diisi kalau niche = 'lainnya', nama bisnis versi tenant sendiri
   owner_name?: string
   wa_number?: string
   logo_url?: string
