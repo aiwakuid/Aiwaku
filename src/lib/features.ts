@@ -6,6 +6,14 @@ import type { FeatureKey, Niche } from '../types'
 // salinan sisi client untuk render UI wizard registrasi — kalau
 // nambah niche/fitur baru, migration DAN file ini harus diupdate
 // bareng, jangan cuma salah satu.
+//
+// CATATAN 'lainnya' (migration v66): kalau user pilih niche ini di wizard
+// registrasi, UI WAJIB nampilin input teks tambahan buat nama jenis usaha
+// sendiri, dan nilainya dikirim sebagai p_niche_label ke register_tenant_atomic
+// (atau field `niche_label` di metadata registrasi kalau lewat flow
+// complete_registration_from_metadata). RPC akan menolak (raise exception)
+// kalau niche = 'lainnya' tapi label kosong — belum ada perubahan di halaman
+// registrasi untuk field ini, itu next step terpisah dari migration ini.
 
 export const NICHE_CATALOG: { key: Niche; label: string; emoji: string }[] = [
   { key: 'resto', label: 'Resto', emoji: '🍜' },
@@ -32,6 +40,7 @@ export const NICHE_CATALOG: { key: Niche; label: string; emoji: string }[] = [
   { key: 'kursus', label: 'Kursus / Bimbel', emoji: '📚' },
   { key: 'travel_tour', label: 'Travel / Tour', emoji: '🧳' },
   { key: 'gedung', label: 'Sewa Gedung / Ruangan', emoji: '🏢' },
+  { key: 'lainnya', label: 'Lainnya', emoji: '✏️' },
 ]
 
 // is_available: false = placeholder, belum ada halaman (lihat catatan
@@ -76,6 +85,10 @@ export const NICHE_FEATURE_DEFAULTS: Record<Niche, FeatureKey[]> = {
   kursus: ['booking', 'customers', 'reports', 'calendar'],
   travel_tour: ['booking', 'customers', 'reports', 'calendar'],
   gedung: ['booking', 'customers', 'reports', 'calendar'],
+  // 'lainnya': flow_type default 'order' (lihat niche_flow_catalog di migration
+  // v66), jadi default fitur ikut pola niche 'order' paling minimal — tenant
+  // tetap bebas ubah sebelum submit seperti niche lain.
+  lainnya: ['customers', 'reports', 'catalog'],
 }
 
 // Pemetaan feature key -> path segment yang di-gate di App.tsx/Sidebar.
