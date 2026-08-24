@@ -1,10 +1,12 @@
 
 import { useState } from 'react'
 import { useMenus } from '../hooks/useMenus'
+import { useTenantAuth } from '../context/TenantAuthContext'
 import { Search } from 'lucide-react'
 
 export function MenuStock() {
-  const { menus, addStock, toggleActive, updatePrice } = useMenus()
+  const { tenantId } = useTenantAuth()
+  const { menus, addStock, toggleActive, updatePrice } = useMenus(tenantId ?? undefined)
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState('all')
 
@@ -27,9 +29,9 @@ export function MenuStock() {
 
       <div className="grid md:grid-cols-4 gap-3">
         <div className="bg-white rounded-2xl border p-4"><div className="text-[11px] text-slate-500">Menu Aktif (listing)</div><div className="text-[20px] font-bold">{activeCount} / {menus.length}</div><div className="text-[11px] text-slate-500">Stok 0 auto hide, toggle manual tidak ubah stok</div></div>
-        <div className="bg-white rounded-2xl border p-4"><div className="text-[11px] text-slate-500">Total Stok Fisik</div><div className="text-[20px] font-bold">{menus.reduce((s,m)=>s+m.stock,0)} item</div><div className="text-[11px] text-emerald-600">Persisted di localStorage + audit log</div></div>
+        <div className="bg-white rounded-2xl border p-4"><div className="text-[11px] text-slate-500">Total Stok Fisik</div><div className="text-[20px] font-bold">{menus.reduce((s,m)=>s+m.stock,0)} item</div><div className="text-[11px] text-emerald-600">Supabase-backed + cache tenant</div></div>
         <div className="bg-white rounded-2xl border p-4"><div className="text-[11px] text-slate-500">Bug Fix V3</div><div className="text-[13px] font-semibold mt-1">Stock ≠ Active (fixed)</div><div className="text-[11px] text-slate-500">Stock 0 → auto inactive. Toggle manual → stock tetap.</div></div>
-        <div className="bg-[#25D366]/10 border border-[#25D366]/20 rounded-2xl p-4"><div className="text-[11px] font-bold text-[#128C7E]">Real Persistence</div><div className="text-[11px] mt-1">Refresh browser → data tetap ada (localStorage). Nanti ganti Supabase 1 line.</div></div>
+        <div className="bg-[#25D366]/10 border border-[#25D366]/20 rounded-2xl p-4"><div className="text-[11px] font-bold text-[#128C7E]">Real Persistence</div><div className="text-[11px] mt-1">Data tersimpan di Supabase dan tersinkron lintas device melalui tenant_id.</div></div>
       </div>
 
       <div className="bg-white rounded-[20px] border shadow-sm overflow-hidden">

@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { parseIntent } from '../lib/intentParser'
 import { useMenus } from '../hooks/useMenus'
+import { useTenantAuth } from '../context/TenantAuthContext'
 import type { ChatMessage } from '../types'
 
 const initial: ChatMessage[] = [
@@ -12,7 +13,8 @@ const initial: ChatMessage[] = [
 export function AdminControl() {
   const [messages, setMessages] = useState<ChatMessage[]>(initial)
   const [input, setInput] = useState('')
-  const { menus, updateStock, findByName, updatePrice, toggleActive } = useMenus()
+  const { tenantId } = useTenantAuth()
+  const { menus, updateStock, findByName, updatePrice, toggleActive } = useMenus(tenantId ?? undefined)
   const endRef = useRef<HTMLDivElement>(null)
   useEffect(()=>{ endRef.current?.scrollIntoView({behavior:'smooth'}) }, [messages])
 

@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback } from 'react'
 import type { Menu } from '../types'
 import { loadMenus, saveMenus } from '../lib/storage'
 import { supabase, isSupabaseEnabled, subscribeToTable } from '../lib/supabase'
+import { useTenantAuth } from '../context/TenantAuthContext'
 
 export function useMenus(tenantId?: string) {
-  const [menus, setMenusState] = useState<Menu[]>(() => loadMenus(tenantId))
-  const id = tenantId || ''
+  const { tenantId: authTenantId } = useTenantAuth()
+  const id = tenantId || authTenantId || ''
+  const [menus, setMenusState] = useState<Menu[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -78,6 +80,7 @@ export function useMenus(tenantId?: string) {
   }
 
   const addMenu = async (menu: Omit<Menu, 'id' | 'created_at' | 'updated_at'>) => {
+    if (!id) return null
     const now = new Date().toISOString()
     const newMenu: Menu = { ...menu, tenant_id: id, id: crypto.randomUUID(), created_at: now, updated_at: now }
     setMenusState(prev => [newMenu, ...prev])
