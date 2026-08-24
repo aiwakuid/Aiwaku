@@ -25,6 +25,7 @@ export function Invoice() {
   const [payment, setPayment] = useState<Payment | null>(null)
   const [calendarLink, setCalendarLink] = useState<string | null>(null)
   const [sheetStatus, setSheetStatus] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
   const { addLog } = useAudit(activeTenantId)
 
   useEffect(() => {
@@ -40,7 +41,8 @@ export function Invoice() {
 
   const createInvoice = async () => {
     const bakeryMenu = menus.find(m => m.niche === 'bakery' && m.is_active) || menus.find(m => m.is_active)
-    if (!bakeryMenu) return
+    if (!bakeryMenu) { setFormError('Tambahkan menu dulu sebelum bikin invoice.'); return }
+    setFormError(null)
     const pickup = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
     pickup.setHours(15, 0, 0, 0)
     const order = await createOrderServer({
@@ -101,6 +103,7 @@ export function Invoice() {
         <input value={wa} onChange={e=>setWa(e.target.value)} placeholder="WA customer" className="h-9 rounded-xl border px-3 text-[12px] w-[150px]" />
         <span className="text-[11px] px-3 py-2 rounded-full bg-emerald-50 border border-emerald-200">P2: QRIS auto + Google Calendar link + Sheets CSV auto</span>
       </div>
+      {formError && <div className="text-[12px] px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700">{formError}</div>}
 
       <div className="grid md:grid-cols-2 gap-4">
         <div className="bg-white rounded-[20px] border p-6">
