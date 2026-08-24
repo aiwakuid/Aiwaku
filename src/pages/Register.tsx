@@ -33,6 +33,7 @@ export function Register() {
 
   // Step 2 - niche
   const [niche, setNiche] = useState<Niche | null>(null)
+  const [nicheLabel, setNicheLabel] = useState('')
 
   // Step 3 - fitur
   const [features, setFeatures] = useState<Set<FeatureKey>>(new Set())
@@ -40,7 +41,7 @@ export function Register() {
   const effectiveSlug = slugTouched ? slug : slugify(businessName)
 
   const canGoStep2 = businessName.trim().length >= 3 && effectiveSlug.length >= 3 && /^\S+@\S+\.\S+$/.test(email) && password.length >= 6
-  const canGoStep3 = !!niche
+  const canGoStep3 = !!niche && (niche !== 'lainnya' || nicheLabel.trim().length >= 2)
   const canSubmit = canGoStep2 && canGoStep3
 
   const toggleFeature = (key: FeatureKey, available: boolean) => {
@@ -67,6 +68,7 @@ export function Register() {
       business_name: businessName.trim(),
       slug: effectiveSlug,
       niche,
+      niche_label: niche === 'lainnya' ? nicheLabel.trim() : null,
       owner_name: null,
       wa_number: waNumber.trim() || null,
       features: Array.from(features),
@@ -148,6 +150,14 @@ export function Register() {
                 </button>
               ))}
             </div>
+            {niche === 'lainnya' && (
+              <input
+                value={nicheLabel}
+                onChange={e => setNicheLabel(e.target.value)}
+                placeholder="Tulis jenis usaha Anda"
+                className="w-full h-11 rounded-xl border px-3 mt-3"
+              />
+            )}
             <div className="flex gap-2 mt-5">
               <button type="button" onClick={() => setStep(1)} className="flex-1 h-11 rounded-xl border font-semibold">Kembali</button>
               <button type="button" disabled={!canGoStep3} onClick={() => setStep(3)} className="flex-1 h-11 rounded-xl bg-slate-900 text-white font-semibold disabled:opacity-40">Lanjut</button>
