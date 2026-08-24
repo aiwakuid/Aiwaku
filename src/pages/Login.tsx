@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase, isSupabaseEnabled } from '../lib/supabase'
 
 export function Login() {
@@ -17,7 +17,14 @@ export function Login() {
     setBusy(true); setError(null)
     const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
     if (signInError) { setError(signInError.message); setBusy(false); return }
-    navigate(next, { replace: true })
+
+    // Jika user berasal dari registrasi dengan email confirmation,
+    // provisioning tenant diselesaikan di login pertama dari metadata auth.
+    const { data: completed, error: completionError } = await supabase.rpc('complete_registration_from_metadata')
+    if (completionError) { setError(completionError.message); setBusy(false); return }
+
+    setBusy(false)
+    navigate(completed?.slug ? `/t/${completed.slug}` : next, { replace: true })
   }
 
   return (
@@ -31,6 +38,7 @@ export function Login() {
           {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl p-3">{error}</div>}
           <button disabled={busy} className="w-full h-11 rounded-xl bg-slate-900 text-white font-semibold disabled:opacity-50">{busy ? 'Memproses...' : 'Masuk'}</button>
         </div>
+        <div className="text-center text-[12px] text-slate-500 mt-5">Belum punya akun? <Link to="/register" className="font-semibold text-slate-900">Daftar</Link></div>
       </form>
     </div>
   )

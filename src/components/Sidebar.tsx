@@ -1,39 +1,54 @@
+import type { LucideIcon } from 'lucide-react'
+import type { FeatureKey } from '../types'
 import { NavLink, useParams, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, ShoppingCart, Package, PackagePlus, Users, BarChart3, Settings2, CalendarDays, Receipt, Bot, ChefHat, Table2, LogOut } from 'lucide-react'
 import { useTenantAuth } from '../context/TenantAuthContext'
 
+interface SidebarItem {
+  to: string
+  label: string
+  icon: LucideIcon
+  end?: boolean
+  feature?: FeatureKey
+}
+
 export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean, onClose: () => void }) {
   const { slug } = useParams()
   const basePath = slug ? `/t/${slug}` : ''
-  const { signOut } = useTenantAuth()
+  const { signOut, hasFeature } = useTenantAuth()
   const navigate = useNavigate()
   const handleLogout = async () => {
     await signOut()
     navigate('/login', { replace: true })
   }
-  const groups = [
+  // `feature` di sini match ke FeatureKey (src/types.ts) / FEATURE_ROUTE_MAP
+  // (src/lib/features.ts). Item tanpa `feature` selalu tampil (core).
+  const groups: { title: string; items: SidebarItem[] }[] = ([
     { title: 'Utama', items: [
       { to: `${basePath}/`, label: 'Beranda', icon: LayoutDashboard, end: true },
       { to: `${basePath}/pos`, label: 'Jualan', icon: ShoppingCart },
     ]},
     { title: 'Operasional', items: [
       { to: `${basePath}/menu`, label: 'Menu & Stok', icon: Package },
-      { to: `${basePath}/inventory`, label: 'Persediaan', icon: PackagePlus },
-      { to: `${basePath}/kds`, label: 'Kitchen', icon: ChefHat },
-      { to: `${basePath}/tables`, label: 'Meja', icon: Table2 },
-      { to: `${basePath}/bookings`, label: 'Booking', icon: CalendarDays },
+      { to: `${basePath}/inventory`, label: 'Persediaan', icon: PackagePlus, feature: 'inventory' },
+      { to: `${basePath}/kds`, label: 'Kitchen', icon: ChefHat, feature: 'kds' },
+      { to: `${basePath}/tables`, label: 'Meja', icon: Table2, feature: 'tables' },
+      { to: `${basePath}/bookings`, label: 'Booking', icon: CalendarDays, feature: 'booking' },
       { to: `${basePath}/admin`, label: 'AIWAKU', icon: Bot },
     ]},
     { title: 'Bisnis', items: [
-      { to: `${basePath}/customers`, label: 'Pelanggan', icon: Users },
-      { to: `${basePath}/reports`, label: 'Bisnis', icon: BarChart3 },
+      { to: `${basePath}/customers`, label: 'Pelanggan', icon: Users, feature: 'customers' },
+      { to: `${basePath}/reports`, label: 'Bisnis', icon: BarChart3, feature: 'reports' },
     ]},
     { title: 'Lainnya', items: [
-      { to: `${basePath}/calendar`, label: 'Kalender', icon: CalendarDays },
-      { to: `${basePath}/catalog`, label: 'Katalog', icon: Receipt },
+      { to: `${basePath}/calendar`, label: 'Kalender', icon: CalendarDays, feature: 'calendar' },
+      { to: `${basePath}/catalog`, label: 'Katalog', icon: Receipt, feature: 'catalog' },
       { to: `${basePath}/settings`, label: 'Pengaturan', icon: Settings2 },
     ]},
-  ]
+  ] as { title: string; items: SidebarItem[] }[]).map(group => ({
+    ...group,
+    items: group.items.filter(it => !it.feature || hasFeature(it.feature)),
+  })).filter(group => group.items.length > 0)
 
   return (
     <>

@@ -156,7 +156,7 @@ $$;
 -- caller resmi adalah edge function create-order (service-role, sudah
 -- verifikasi JWT + membership sendiri sebelum manggil RPC ini).
 revoke all on function public.create_order_atomic(uuid,text,text,jsonb,integer,integer,timestamptz,text,text,uuid) from public;
-revoke all on function public.create_order_atomic(uuid,text,text,jsonb,integer,integer,timestamptz,text,text) from authenticated;
+-- [skip: signature 9-param tidak pernah ada di staging ini] revoke all on function public.create_order_atomic(uuid,text,text,jsonb,integer,integer,timestamptz,text,text) from authenticated;
 grant execute on function public.create_order_atomic(uuid,text,text,jsonb,integer,integer,timestamptz,text,text,uuid) to service_role;
 
 -- ============================================================

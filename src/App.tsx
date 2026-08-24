@@ -21,7 +21,9 @@ import { Tables } from './pages/Tables'
 import { Inventory } from './pages/Inventory'
 import { AuthTenantGuard } from './components/AuthTenantGuard'
 import { AdminRouteGuard } from './components/AdminRouteGuard'
+import { FeatureRouteGuard } from './components/FeatureRouteGuard'
 import { Login } from './pages/Login'
+import { Register } from './pages/Register'
 
 // Satu layout untuk root dan /t/:slug (sebelumnya TenantLayout & RootLayout duplikat)
 function Layout() {
@@ -48,16 +50,16 @@ function Layout() {
             <Route path="menu" element={<MenuStock />} />
             <Route path="invoices" element={<Invoice />} />
             <Route path="pos" element={<POS />} />
-            <Route path="kds" element={<KDS />} />
-            <Route path="tables" element={<Tables />} />
-            <Route path="inventory" element={<Inventory />} />
+            <Route path="kds" element={<FeatureRouteGuard featureKey="kds"><KDS /></FeatureRouteGuard>} />
+            <Route path="tables" element={<FeatureRouteGuard featureKey="tables"><Tables /></FeatureRouteGuard>} />
+            <Route path="inventory" element={<FeatureRouteGuard featureKey="inventory"><Inventory /></FeatureRouteGuard>} />
             <Route path="admin" element={<AdminRouteGuard><AdminControl /></AdminRouteGuard>} />
             <Route path="livechat" element={<LiveChat />} />
-            <Route path="calendar" element={<Calendar />} />
-            <Route path="bookings" element={<Bookings />} />
-            <Route path="customers" element={<Customers />} />
-            <Route path="catalog" element={<Catalog />} />
-            <Route path="reports" element={<Reports />} />
+            <Route path="calendar" element={<FeatureRouteGuard featureKey="calendar"><Calendar /></FeatureRouteGuard>} />
+            <Route path="bookings" element={<FeatureRouteGuard featureKey="booking"><Bookings /></FeatureRouteGuard>} />
+            <Route path="customers" element={<FeatureRouteGuard featureKey="customers"><Customers /></FeatureRouteGuard>} />
+            <Route path="catalog" element={<FeatureRouteGuard featureKey="catalog"><Catalog /></FeatureRouteGuard>} />
+            <Route path="reports" element={<FeatureRouteGuard featureKey="reports"><Reports /></FeatureRouteGuard>} />
             <Route path="settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="." replace />} />
           </Routes>
@@ -74,6 +76,7 @@ export default function App() {
     <HashRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
         <Route path="/t/:slug/*" element={<Layout />} />
         <Route path="/*" element={<Layout />} />
       </Routes>
