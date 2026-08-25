@@ -1,11 +1,12 @@
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTenantAuth } from '../context/TenantAuthContext'
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
-import { loadOrders } from '../lib/storage'
+import { useOrders } from '../hooks/useOrders'
+import { supabase, isSupabaseEnabled } from '../lib/supabase'
 import { syncOrderToGoogleCalendar } from '../lib/googleCalendar'
-import type { Order, BookingSlot } from '../types'
+import type { BookingSlot, Order } from '../types'
 
 
 
@@ -13,26 +14,60 @@ function toDateKey(d: Date) {
   return d.toISOString().split('T')[0]
 }
 
-function getBookingsForDate(dateKey: string, tenantId: string): BookingSlot[] {
-  try {
-    const raw = localStorage.getItem(`aiwaku_v5_bookings_${tenantId}_${dateKey}`)
-    if (!raw) return []
-    const slots: BookingSlot[] = JSON.parse(raw)
-    return Array.isArray(slots) ? slots.filter(s => s.status === 'booked') : []
-  } catch { return [] }
+// Baris booking Supabase pakai nama kolom start_time/end_time/field_no,
+// beda dari bentuk BookingSlot di client (start/end/field).
+function mapBookingRow(row: any): BookingSlot {
+  return {
+    id: row.id,
+    tenant_id: row.tenant_id,
+    date: row.date,
+    start: row.start_time,
+    end: row.end_time,
+    field: row.field_no,
+    customer_name: row.customer_name ?? '',
+    customer_wa: row.customer_wa ?? '',
+    status: row.status,
+    price: row.price ?? 0,
+    created_at: row.created_at,
+  }
 }
 
 export function Calendar() {
   const { slug } = useParams()
   const { tenantId, membership } = useTenantAuth()
-  if (!tenantId) return null
   const [cursor, setCursor] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
   })
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [bookingsByDate, setBookingsByDate] = useState<Record<string, BookingSlot[]>>({})
 
-  const orders = useMemo(() => loadOrders(tenantId), [tenantId])
+  const { orders } = useOrders(tenantId ?? undefined)
+
+  // Ambil booking asli sebulan penuh dari Supabase (bukan hanya cache
+  // localStorage tanggal yang kebetulan sudah pernah dibuka di halaman Booking).
+  useEffect(() => {
+    if (!tenantId || !isSupabaseEnabled()) { setBookingsByDate({}); return }
+    let cancelled = false
+    const year = cursor.getFullYear()
+    const month = cursor.getMonth()
+    const start = toDateKey(new Date(year, month, 1))
+    const end = toDateKey(new Date(year, month + 1, 0))
+    supabase!.from('bookings').select('*').eq('tenant_id', tenantId).eq('status', 'booked')
+      .gte('date', start).lte('date', end)
+      .then(({ data, error }) => {
+        if (cancelled || error || !data) return
+        const map: Record<string, BookingSlot[]> = {}
+        ;(data as any[]).map(mapBookingRow).forEach(b => {
+          if (!map[b.date]) map[b.date] = []
+          map[b.date].push(b)
+        })
+        setBookingsByDate(map)
+      })
+    return () => { cancelled = true }
+  }, [tenantId, cursor])
+
+  if (!tenantId) return null
 
   const monthLabel = cursor.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
 
@@ -65,7 +100,7 @@ export function Calendar() {
 
   const todayKey = toDateKey(new Date())
   const selectedOrders = selectedDate ? (ordersByDate[selectedDate] || []) : []
-  const selectedBookings = selectedDate ? getBookingsForDate(selectedDate, tenantId) : []
+  const selectedBookings = selectedDate ? (bookingsByDate[selectedDate] || []) : []
 
   return (
     <div className="p-4 md:p-6 max-w-[1100px] mx-auto space-y-4">
@@ -87,7 +122,7 @@ export function Calendar() {
             if (!c.date) return <div key={i} className="min-h-[80px] border-b border-r bg-slate-50/50" />
             const key = toDateKey(c.date)
             const dayOrders = ordersByDate[key] || []
-            const dayBookings = getBookingsForDate(key, tenantId)
+            const dayBookings = bookingsByDate[key] || []
             const isToday = key === todayKey
             const isSelected = key === selectedDate
             return (
@@ -136,7 +171,7 @@ export function Calendar() {
         </div>
       )}
 
-      <div className="bg-slate-900 text-white rounded-2xl p-3 text-[11px]">📅 Data diambil real dari order (pickup_time) + booking engine yang tersimpan di localStorage (atau Supabase kalau env diisi) - bukan lagi halaman placeholder. Klik tanggal untuk lihat detail dan buka link Google Calendar.</div>
+      <div className="bg-slate-900 text-white rounded-2xl p-3 text-[11px]">📅 Data diambil real dari order (pickup_time) dan booking Supabase untuk bulan yang sedang dilihat. Klik tanggal untuk lihat detail dan buka link Google Calendar.</div>
     </div>
   )
 }

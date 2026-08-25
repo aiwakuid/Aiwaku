@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from 'react'
 import { useTenantAuth } from './context/TenantAuthContext'
+import { useTenant } from './hooks/useTenant'
 import { HashRouter, Routes, Route, useParams, Navigate } from 'react-router-dom'
 import { Header } from './components/Header'
 import { Sidebar } from './components/Sidebar'
@@ -30,21 +31,16 @@ function Layout() {
   const { slug } = useParams()
   const [mobileOpen, setMobileOpen] = useState(false)
   const { refresh, membership, loading } = useTenantAuth()
+  const { tenant } = useTenant()
   useEffect(() => { if (slug) void refresh(slug) }, [slug, refresh])
   if (slug && !loading && membership?.tenant?.slug !== slug) return <div className="p-6">Tenant tidak ditemukan atau akun tidak memiliki akses ke tenant ini.</div>
 
   return (
     <AuthTenantGuard><div className="min-h-screen bg-[#F6F7F8] text-slate-900 antialiased">
-      <Header onToggleMobile={()=>setMobileOpen(!mobileOpen)} aiActive={true} />
+      <Header onToggleMobile={()=>setMobileOpen(!mobileOpen)} tenant={tenant} />
       <div className="mx-auto max-w-[1600px] flex min-h-[calc(100vh-56px)]">
         <Sidebar mobileOpen={mobileOpen} onClose={()=>setMobileOpen(false)} />
         <main className="flex-1 min-w-0 bg-[#F6F7F8]">
-          {slug && (
-            <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-[11px] flex justify-between">
-              <span>Multi-tenant: app.aiwaku.id/t/{slug} • Tenant isolation by tenant_id • Supabase Realtime enabled</span>
-              <span className="font-mono">/{slug}</span>
-            </div>
-          )}
           <Routes>
             <Route index element={<Dashboard />} />
             <Route path="menu" element={<MenuStock />} />

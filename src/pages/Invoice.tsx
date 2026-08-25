@@ -20,8 +20,8 @@ export function Invoice() {
   const { menus } = useMenus(tenantId ?? undefined)
   const [orders, setOrders] = useState<Order[]>([])
   const [selected, setSelected] = useState<Order | null>(null)
-  const [customer, setCustomer] = useState('Rina')
-  const [wa, setWa] = useState('081234567890')
+  const [customer, setCustomer] = useState('')
+  const [wa, setWa] = useState('')
   const [payment, setPayment] = useState<Payment | null>(null)
   const [calendarLink, setCalendarLink] = useState<string | null>(null)
   const [sheetStatus, setSheetStatus] = useState<string | null>(null)
@@ -42,6 +42,7 @@ export function Invoice() {
   const createInvoice = async () => {
     const bakeryMenu = menus.find(m => m.is_active)
     if (!bakeryMenu) { setFormError('Tambahkan menu dulu sebelum bikin invoice.'); return }
+    if (!customer.trim() || !wa.trim()) { setFormError('Isi nama dan WA customer dulu sebelum bikin invoice.'); return }
     setFormError(null)
     const pickup = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
     pickup.setHours(15, 0, 0, 0)
