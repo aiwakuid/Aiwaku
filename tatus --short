@@ -1,0 +1,128 @@
+[1mdiff --git a/supabase/migrations/20260830_v65_revoke_anon_rpc_access.sql b/supabase/migrations/20260830_v65_revoke_anon_rpc_access.sql[m
+[1mdeleted file mode 100644[m
+[1mindex dfc9237..0000000[m
+[1m--- a/supabase/migrations/20260830_v65_revoke_anon_rpc_access.sql[m
+[1m+++ /dev/null[m
+[36m@@ -1,125 +0,0 @@[m
+[31m--- AIWAKU V6.5 — Revoke anon RPC access (reconciled post-v6.4 merge)[m
+[31m--- Ditemukan lewat audit pg_proc/role_routine_grants: hampir semua function[m
+[31m--- public punya grant EXECUTE ke role `anon`, padahal migration sebelumnya[m
+[31m--- hanya `revoke ... from public` / `from authenticated`. Ini karena Supabase[m
+[31m--- secara default punya ALTER DEFAULT PRIVILEGES yang otomatis grant EXECUTE[m
+[31m--- ke anon+authenticated+service_role setiap function baru dibuat — terpisah[m
+[31m--- dari role `public`, jadi `revoke ... from public` tidak menyentuhnya.[m
+[31m---[m
+[31m--- Migration ini awalnya dibuat terhadap baseline v5.7 sebagai[m
+[31m--- 20260824_v57_revoke_anon_rpc_access.sql, tetapi TIDAK PERNAH diterapkan ke[m
+[31m--- branch phase1-security-hardening dan tidak ada di ZIP v6.4. Migration ini[m
+[31m--- dipindahkan ke sini (setelah 20260829_v64_business_flow_extensible.sql)[m
+[31m--- sebagai bagian dari merge v6.4, dan tetap valid — semua function yang[m
+[31m--- direferensikan di bawah dikonfirmasi ada (lihat supabase/schema.production.sql),[m
+[31m--- termasuk overload lama create_order_atomic (9 parameter) yang masih ter-grant[m
+[31m--- ke `authenticated` di schema tersebut.[m
+[31m---[m
+[31m--- Migration ini:[m
+[31m--- 1) Drop overload LAMA create_order_atomic (9 parameter, bergantung[m
+[31m---    auth.uid(), sudah digantikan versi 10 parameter dengan p_idempotency_key[m
+[31m---    / p_user_id — lihat 20260823_v57_payment_race_ratelimit_and_orderfix.sql).[m
+[31m--- 2) Revoke EXECUTE dari `anon` secara eksplisit untuk semua RPC yang[m
+[31m---    seharusnya cuma bisa dipanggil user yang sudah login (authenticated)[m
+[31m---    atau cuma dari edge function (service_role).[m
+[31m--- 3) Set ALTER DEFAULT PRIVILEGES supaya function BARU ke depan tidak lagi[m
+[31m---    otomatis ke-grant ke anon (mencegah regresi yang sama, termasuk untuk[m
+[31m---    RPC baru dari v6.4 seperti complete_registration_from_metadata dan[m
+[31m---    register_tenant_atomic).[m
+[31m---[m
+[31m--- PENTING sebelum apply: jalankan ulang query verifikasi di bagian akhir file[m
+[31m--- ini untuk memastikan signature setiap function di production benar-benar[m
+[31m--- cocok dengan yang direferensikan di bawah (signature bisa saja sudah[m
+[31m--- berubah lagi kalau ada migration lain di antara waktu audit ini dibuat[m
+[31m--- dan waktu migration ini benar-benar di-apply).[m
+[31m-[m
+[31m--- ============================================================[m
+[31m--- 1) Drop overload lama create_order_atomic (9 parameter).[m
+[31m---    Konfirmasi dulu tidak ada pemanggil lain sebelum drop:[m
+[31m---    grep -rn "create_order_atomic" src supabase/functions[m
+[31m---    -> hanya ada 1 pemanggil (create-order/index.ts), sudah pakai versi[m
+[31m---    10 parameter (dengan p_idempotency_key).[m
+[31m--- ============================================================[m
+[31m-[m
+[31m-drop function if exists public.create_order_atomic([m
+[31m-  uuid, text, text, jsonb, integer, integer, timestamptz, text, text[m
+[31m-);[m
+[31m-[m
+[31m--- Pastikan versi yang dipakai sekarang (10 parameter, parameter terakhir[m
+[31m--- p_user_id uuid) HANYA bisa dipanggil service_role — bukan authenticated/anon,[m
+[31m--- karena p_user_id dioper eksplisit dari parameter (bukan divalidasi ulang[m
+[31m--- lewat auth.uid() milik caller). Kalau authenticated atau anon punya[m
+[31m--- EXECUTE, siapapun bisa oper p_user_id sembarang orang.[m
+[31m-revoke all on function public.create_order_atomic([m
+[31m-  uuid, text, text, jsonb, integer, integer, timestamptz, text, text, uuid[m
+[31m-) from public, anon, authenticated;[m
+[31m-grant execute on function public.create_order_atomic([m
+[31m-  uuid, text, text, jsonb, integer, integer, timestamptz, text, text, uuid[m
+[31m-) to service_role;[m
+[31m-[m
+[31m--- ============================================================[m
+[31m--- 2) RPC yang cuma boleh dipanggil edge function (service_role saja).[m
+[31m---    Alasan tiap function: identitas/otorisasi sudah divalidasi TERPISAH[m
+[31m---    oleh edge function (verifikasi JWT + cek membership) sebelum RPC[m
+[31m---    dipanggil — RPC sendiri tidak divalidasi ulang lewat auth.uid().[m
+[31m--- ============================================================[m
+[31m-[m
+[31m-revoke all on function public.check_rate_limit(text, text, integer, integer)[m
+[31m-  from public, anon, authenticated;[m
+[31m-grant execute on function public.check_rate_limit(text, text, integer, integer)[m
+[31m-  to service_role;[m
+[31m-[m
+[31m-revoke all on function public.reserve_pending_payment_atomic(uuid, uuid, bigint)[m
+[31m-  from public, anon, authenticated;[m
+[31m-grant execute on function public.reserve_pending_payment_atomic(uuid, uuid, bigint)[m
+[31m-  to service_role;[m
+[31m-[m
+[31m-revoke all on function public.attach_midtrans_details_atomic(uuid, text, text, text, text)[m
+[31m-  from public, anon, authenticated;[m
+[31m-grant execute on function public.attach_midtrans_details_atomic(uuid, text, text, text, text)[m
+[31m-  to service_role;[m
+[31m-[m
+[31m-revoke all on function public.mark_payment_paid(uuid, text, bigint)[m
+[31m-  from public, anon, authenticated;[m
+[31m-grant execute on function public.mark_payment_paid(uuid, text, bigint)[m
+[31m-  to service_role;[m
+[31m-[m
+[31m--- ============================================================[m
+[31m--- 3) RPC yang dipanggil langsung dari frontend oleh user yang sudah login[m
+[31m---    (staff/admin tenant) — cabut anon, tetap authenticated.[m
+[31m--- ============================================================[m
+[31m-[m
+[31m-revoke execute on function public.admin_upsert_customer(jsonb) from anon;[m
+[31m-revoke execute on function public.admin_upsert_menu(jsonb) from anon;[m
+[31m-revoke execute on function public.book_slot_atomic(jsonb) from anon;[m
+[31m-revoke execute on function public.cancel_booking_atomic(uuid) from anon;[m
+[31m-revoke execute on function public.cancel_order_atomic(uuid, text) from anon;[m
+[31m-revoke execute on function public.record_cash_payment(uuid, bigint) from anon;[m
+[31m-revoke execute on function public.write_audit_log(uuid, text, text, text, jsonb, jsonb) from anon;[m
+[31m-[m
+[31m--- v6.4: RPC registrasi baru — sudah authenticated-only lewat[m
+[31m--- `grant execute ... to authenticated` di migration v61, tapi kita[m
+[31m--- eksplisit cabut anon juga sebagai defense-in-depth mengikuti pola ini.[m
+[31m-revoke execute on function public.complete_registration_from_metadata() from anon;[m
+[31m-[m
+[31m--- ============================================================[m
+[31m--- 4) Cegah regresi: function baru ke depan tidak otomatis ke-grant ke anon.[m
+[31m---    (authenticated & service_role tetap dapat default seperti biasa;[m
+[31m---    kalau function baru butuh anon, harus di-grant eksplisit di migration[m
+[31m---    yang membuatnya — jangan biarkan ke-inherit diam-diam.)[m
+[31m--- ============================================================[m
+[31m-[m
+[31m-alter default privileges in schema public[m
+[31m-  revoke execute on functions from anon;[m
+[31m-[m
+[31m--- ============================================================[m
+[31m--- 5) Verifikasi cepat: query ini HARUS kosong setelah migration ini jalan.[m
+[31m---    (bukan bagian dari migration, tinggal dijalankan manual setelahnya)[m
+[31m--- ============================================================[m
+[31m--- select p.proname, string_agg(grantee, ', ') as anon_masih_ada[m
+[31m--- from information_schema.role_routine_grants g[m
+[31m--- join pg_proc p on p.proname = g.routine_name[m
+[31m--- join pg_namespace n on n.oid = p.pronamespac

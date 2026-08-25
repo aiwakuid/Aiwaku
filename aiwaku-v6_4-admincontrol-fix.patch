@@ -1,0 +1,20 @@
+--- src/pages/AdminControl.tsx	2026-08-24 08:37:30.209054006 +0000
++++ /tmp/aiwaku/src/pages/AdminControl.tsx	2026-08-24 08:37:30.212190124 +0000
+@@ -2,6 +2,7 @@
+ import { useState, useRef, useEffect } from 'react'
+ import { parseIntent } from '../lib/intentParser'
+ import { useMenus } from '../hooks/useMenus'
++import { useTenantAuth } from '../context/TenantAuthContext'
+ import type { ChatMessage } from '../types'
+ 
+ const initial: ChatMessage[] = [
+@@ -12,7 +13,8 @@
+ export function AdminControl() {
+   const [messages, setMessages] = useState<ChatMessage[]>(initial)
+   const [input, setInput] = useState('')
+-  const { menus, updateStock, findByName, updatePrice, toggleActive } = useMenus()
++  const { tenantId } = useTenantAuth()
++  const { menus, updateStock, findByName, updatePrice, toggleActive } = useMenus(tenantId ?? undefined)
+   const endRef = useRef<HTMLDivElement>(null)
+   useEffect(()=>{ endRef.current?.scrollIntoView({behavior:'smooth'}) }, [messages])
+ 

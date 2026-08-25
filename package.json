@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:audit": "node scripts/db-audit.mjs",
+    "db:audit:strict": "node scripts/db-audit.mjs --strict"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

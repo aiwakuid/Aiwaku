@@ -1,0 +1,348 @@
+From e414c883bdceb44a02cb87d6fde1318945ff32cf Mon Sep 17 00:00:00 2001
+From: AIWAKU DB Audit <audit@aiwaku.local>
+Date: Tue, 25 Aug 2026 02:24:17 +0000
+Subject: [PATCH] Add automated Supabase DB audit
+
+---
+ .gitignore           |   9 ++
+ package.json         |  36 ++++++
+ scripts/db-audit.mjs | 268 +++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 313 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 package.json
+ create mode 100755 scripts/db-audit.mjs
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..2277605
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,9 @@
++node_modules
++dist/
++.env.local
++supabase/.temp/
++# Generated Supabase audit snapshots/reports (keep the dated production baseline separately)
++docs/production/SUPABASE_SCHEMA_AUDIT_*.sql
++docs/production/DB_AUDIT_LATEST.json
++
++docs/production/DB_AUDIT_LATEST.md
+diff --git a/package.json b/package.json
+new file mode 100644
+index 0000000..e8a5c7f
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,36 @@
++{
++  "name": "aiwaku-v5",
++  "private": true,
++  "version": "6.7.0",
++  "type": "module",
++  "scripts": {
++    "dev": "vite",
++    "build": "vite build",
++    "typecheck": "tsc --noEmit",
++    "preview": "vite preview",
++    "test": "vitest run",
++    "test:watch": "vitest",
++    "db:audit": "node scripts/db-audit.mjs",
++    "db:audit:strict": "node scripts/db-audit.mjs --strict"
++  },
++  "dependencies": {
++    "@supabase/supabase-js": "^2.39.0",
++    "date-fns": "^3.3.0",
++    "jspdf": "^2.5.1",
++    "lucide-react": "^0.344.0",
++    "react": "^18.2.0",
++    "react-dom": "^18.2.0",
++    "react-router-dom": "^6.22.0"
++  },
++  "devDependencies": {
++    "@types/react": "^18.2.66",
++    "@types/react-dom": "^18.2.7",
++    "@vitejs/plugin-react": "^4.2.1",
++    "autoprefixer": "^10.4.19",
++    "postcss": "^8.4.38",
++    "tailwindcss": "^3.4.1",
++    "typescript": "^5.2.2",
++    "vite": "^5.0.8",
++    "vitest": "^4.1.11"
++  }
++}
+diff --git a/scripts/db-audit.mjs b/scripts/db-audit.mjs
+new file mode 100755
+index 0000000..9888ca7
+--- /dev/null
++++ b/scripts/db-audit.mjs
+@@ -0,0 +1,268 @@
++#!/usr/bin/env node
++
++/**
++ * AIWAKU Supabase database auditor.
++ *
++ * Read-only. It never applies migrations or mutates the database.
++ *
++ * Preferred source: `supabase db dump --linked` (actual linked project).
++ * Fallback: latest docs/production/SUPABASE_SCHEMA_SNAPSHOT_*.sql.
++ *
++ * Usage:
++ *   npm run db:audit
++ *   npm run db:audit -- --no-dump
++ *   npm run db:audit -- --strict
++ *   npm run db:audit -- --json
++ */
++
++import fs from 'node:fs'
++import path from 'node:path'
++import { execFileSync } from 'node:child_process'
++import process from 'node:process'
++import { fileURLToPath } from 'node:url'
++
++const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
++const DOCS_DIR = path.join(ROOT, 'docs', 'production')
++const args = new Set(process.argv.slice(2))
++const noDump = args.has('--no-dump')
++const explicitFileArg = process.argv.slice(2).find((arg) => arg.startsWith('--file='))
++const explicitFile = explicitFileArg ? path.resolve(ROOT, explicitFileArg.slice('--file='.length)) : null
++const strict = args.has('--strict')
++const jsonOnly = args.has('--json')
++
++const now = new Date()
++const stamp = now.toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)
++const snapshotPath = path.join(DOCS_DIR, `SUPABASE_SCHEMA_AUDIT_${stamp}.sql`)
++const reportPath = path.join(DOCS_DIR, 'DB_AUDIT_LATEST.md')
++const jsonPath = path.join(DOCS_DIR, 'DB_AUDIT_LATEST.json')
++
++fs.mkdirSync(DOCS_DIR, { recursive: true })
++
++function readText(file) {
++  return fs.readFileSync(file, 'utf8')
++}
++
++function runDump() {
++  if (noDump) return null
++  try {
++    execFileSync('supabase', ['db', 'dump', '--linked', '--schema', 'public', '-f', snapshotPath], {
++      cwd: ROOT,
++      stdio: jsonOnly ? 'ignore' : 'inherit',
++      env: process.env,
++    })
++    return snapshotPath
++  } catch (error) {
++    if (!jsonOnly) {
++      console.error('\n[WARN] supabase db dump --linked gagal. Mencari snapshot lokal...')
++    }
++    try { fs.rmSync(snapshotPath, { force: true }) } catch {}
++    return null
++  }
++}
++
++function latestLocalSnapshot() {
++  if (!fs.existsSync(DOCS_DIR)) return null
++  const files = fs.readdirSync(DOCS_DIR)
++    .filter((f) => /^SUPABASE_SCHEMA_SNAPSHOT_\d{4}-\d{2}-\d{2}\.sql$/.test(f))
++    .sort()
++  return files.length ? path.join(DOCS_DIR, files.at(-1)) : null
++}
++
++const sourcePath = explicitFile ?? runDump() ?? latestLocalSnapshot()
++if (!sourcePath || !fs.existsSync(sourcePath)) {
++  console.error('Tidak menemukan schema source.')
++  console.error('Pastikan `supabase` CLI terhubung, atau simpan snapshot di docs/production/.')
++  process.exit(2)
++}
++
++const sql = readText(sourcePath)
++
++function unique(values) { return [...new Set(values)] }
++function quoteName(s) { return s.replaceAll('"', '') }
++
++const tables = unique([...sql.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?(?:public\.)?"?([A-Za-z0-9_]+)"?\s*\(/gi)].map(m => m[1]))
++const indexes = unique([...sql.matchAll(/CREATE (?:UNIQUE )?INDEX(?: IF NOT EXISTS)?\s+"?([A-Za-z0-9_]+)"?/gi)].map(m => m[1]))
++const policies = unique([...sql.matchAll(/CREATE POLICY\s+"?([^"\n]+?)"?\s+ON\s+(?:public\.)?"?([A-Za-z0-9_]+)"?/gi)].map(m => ({ name: m[1].trim(), table: m[2] })))
++const rlsTables = unique([...sql.matchAll(/ALTER TABLE (?:ONLY )?(?:public\.)?"?([A-Za-z0-9_]+)"? ENABLE ROW LEVEL SECURITY/gi)].map(m => m[1]))
++const triggers = unique([...sql.matchAll(/CREATE TRIGGER\s+"?([A-Za-z0-9_]+)"?/gi)].map(m => m[1]))
++const functionHeaders = [...sql.matchAll(/CREATE (?:OR REPLACE )?FUNCTION\s+"?public"?\."?([A-Za-z0-9_]+)"?\s*\(([^)]*)\)\s*RETURNS\s+([^\n]+(?:\n(?!AS|LANGUAGE).*)?)/gi)]
++const functions = unique(functionHeaders.map(m => m[1]))
++
++const anonFunctionGrants = []
++for (const m of sql.matchAll(/GRANT\s+([^;\n]+?)\s+ON\s+FUNCTION\s+"?public"?\."?([A-Za-z0-9_]+)"?\s*\(([^)]*)\)\s+TO\s+"?anon"?/gi)) {
++  anonFunctionGrants.push({ privileges: m[1].trim(), function: m[2], signature: m[3].trim() })
++}
++
++const defaultAnonFunctionGrants = []
++for (const m of sql.matchAll(/ALTER DEFAULT PRIVILEGES[\s\S]{0,400}?GRANT\s+([^;\n]+?)\s+ON\s+FUNCTIONS\s+TO\s+"?anon"?/gi)) {
++  defaultAnonFunctionGrants.push(m[1].trim())
++}
++
++const defaultPrivilegeStatements = [...sql.matchAll(/ALTER DEFAULT PRIVILEGES[\s\S]*?;/gi)].map(m => m[0].replace(/\s+/g, ' ').trim())
++
++function tableBlocks() {
++  const blocks = []
++  const re = /CREATE TABLE (?:IF NOT EXISTS )?(?:public\.)?"?([A-Za-z0-9_]+)"?\s*\(([\s\S]*?)\n\);/gi
++  for (const m of sql.matchAll(re)) blocks.push({ name: m[1], body: m[2] })
++  return blocks
++}
++
++const tenantTables = tableBlocks().filter(t => /\btenant_id\b/i.test(t.body)).map(t => t.name)
++const tenantTablesWithoutRls = tenantTables.filter(t => !rlsTables.includes(t))
++
++const knownServiceOnly = [
++  ['create_order_atomic', 'service_role'],
++  ['check_rate_limit', 'service_role'],
++  ['reserve_pending_payment_atomic', 'service_role'],
++  ['attach_midtrans_details_atomic', 'service_role'],
++  ['mark_payment_paid', 'service_role'],
++  ['bot_get_or_create_wa_conversation', 'service_role'],
++  ['bot_claim_wa_message', 'service_role'],
++  ['bot_finish_wa_message', 'service_role'],
++]
++
++const expectedV67 = {
++  tables: ['wa_conversations', 'wa_messages', 'orders'],
++  indexes: ['wa_messages_provider_unique_idx', 'wa_messages_processing_idx', 'orders_wa_conversation_idx'],
++  functions: ['bot_get_or_create_wa_conversation', 'bot_claim_wa_message', 'bot_finish_wa_message'],
++}
++
++const findings = []
++function add(severity, code, message, evidence = []) {
++  findings.push({ severity, code, message, evidence })
++}
++
++if (anonFunctionGrants.length) {
++  add('CRITICAL', 'ANON_FUNCTION_EXECUTE', `${anonFunctionGrants.length} function masih memiliki GRANT ke role anon.`, anonFunctionGrants.map(x => `${x.function}(${x.signature})`))
++}
++if (defaultAnonFunctionGrants.length) {
++  add('CRITICAL', 'DEFAULT_ANON_FUNCTION_EXECUTE', 'ALTER DEFAULT PRIVILEGES masih memberi EXECUTE function baru kepada anon.', defaultAnonFunctionGrants)
++}
++if (tenantTablesWithoutRls.length) {
++  add('HIGH', 'TENANT_TABLE_WITHOUT_RLS', `${tenantTablesWithoutRls.length} tabel dengan tenant_id tidak terdeteksi ENABLE ROW LEVEL SECURITY.`, tenantTablesWithoutRls)
++}
++
++for (const [fn, role] of knownServiceOnly) {
++  const grants = anonFunctionGrants.filter(x => x.function === fn)
++  if (grants.length) add('CRITICAL', 'SERVICE_RPC_EXPOSED', `${fn} adalah RPC service-only tetapi terbuka ke anon.`, grants.map(x => `${x.function}(${x.signature})`))
++}
++
++for (const item of expectedV67.tables) {
++  if (!tables.includes(item)) add('HIGH', 'V67_OBJECT_MISSING', `Objek v6.7 yang diharapkan tidak ditemukan: table ${item}.`)
++}
++for (const item of expectedV67.indexes) {
++  if (!indexes.includes(item)) add('HIGH', 'V67_OBJECT_MISSING', `Objek v6.7 yang diharapkan tidak ditemukan: index ${item}.`)
++}
++for (const item of expectedV67.functions) {
++  if (!functions.includes(item)) add('HIGH', 'V67_OBJECT_MISSING', `Objek v6.7 yang diharapkan tidak ditemukan: function ${item}.`)
++}
++
++const ordersBlock = tableBlocks().find(t => t.name === 'orders')?.body ?? ''
++const waMessagesBlock = tableBlocks().find(t => t.name === 'wa_messages')?.body ?? ''
++if (tables.includes('orders') && !/\bwa_conversation_id\b/i.test(ordersBlock)) {
++  add('HIGH', 'ORDER_CONVERSATION_CORRELATION_MISSING', 'orders.wa_conversation_id tidak terdeteksi.')
++}
++for (const col of ['processing_status', 'processing_started_at', 'processed_at', 'processing_attempts', 'processing_error']) {
++  if (tables.includes('wa_messages') && !new RegExp(`\\b${col}\\b`, 'i').test(waMessagesBlock)) {
++    add('HIGH', 'WA_PROCESSING_FIELD_MISSING', `wa_messages.${col} tidak terdeteksi.`)
++  }
++}
++
++// Informational checks are not failures.
++if (!triggers.length) add('INFO', 'TRIGGER_TEXT_NOT_VERIFIED', 'Tidak ada CREATE TRIGGER di dump teks. Ini bukan bukti bahwa trigger PostgreSQL benar-benar nol; catalog audit diperlukan untuk kepastian penuh.')
++if (!defaultPrivilegeStatements.length) add('INFO', 'NO_DEFAULT_PRIVILEGES_FOUND', 'Tidak ada ALTER DEFAULT PRIVILEGES di snapshot.')
++
++const counts = {
++  tables: tables.length,
++  functions: functions.length,
++  policies: policies.length,
++  rls: rlsTables.length,
++  indexes: indexes.length,
++  triggers: triggers.length,
++  tenant_tables: tenantTables.length,
++}
++
++const severityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 }
++findings.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || a.code.localeCompare(b.code))
++const summary = Object.fromEntries(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'].map(s => [s, findings.filter(f => f.severity === s).length]))
++const status = summary.CRITICAL || summary.HIGH ? 'FAIL' : 'PASS_WITH_NOTES'
++
++const result = {
++  generated_at: now.toISOString(),
++  source: path.relative(ROOT, sourcePath),
++  source_mode: sourcePath === snapshotPath ? 'linked_database_dump' : 'local_snapshot',
++  counts,
++  summary,
++  status,
++  anon_function_grants: anonFunctionGrants,
++  default_anon_function_grants: defaultAnonFunctionGrants,
++  tenant_tables_without_rls: tenantTablesWithoutRls,
++  findings,
++}
++
++fs.writeFileSync(jsonPath, JSON.stringify(result, null, 2) + '\n')
++
++const lines = []
++lines.push('# AIWAKU — Automated Supabase DB Audit')
++lines.push('')
++lines.push(`Generated: ${now.toISOString()}`)
++lines.push(`Source: \`${path.relative(ROOT, sourcePath)}\` (${result.source_mode})`)
++lines.push('')
++lines.push(`## Result: **${status}**`)
++lines.push('')
++lines.push('| Severity | Count |')
++lines.push('|---|---:|')
++for (const s of ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO']) lines.push(`| ${s} | ${summary[s]} |`)
++lines.push('')
++lines.push('## Catalog / snapshot counts')
++lines.push('')
++lines.push('| Object | Count |')
++lines.push('|---|---:|')
++for (const [k, v] of Object.entries(counts)) lines.push(`| ${k} | ${v} |`)
++lines.push('')
++lines.push('## Findings')
++lines.push('')
++if (!findings.length) lines.push('No findings.')
++for (const f of findings) {
++  lines.push(`### ${f.severity} — ${f.code}`)
++  lines.push(f.message)
++  if (f.evidence.length) {
++    lines.push('')
++    lines.push('```text')
++    lines.push(f.evidence.join('\n'))
++    lines.push('```')
++  }
++  lines.push('')
++}
++lines.push('## Safety')
++lines.push('')
++lines.push('- This audit is read-only.')
++lines.push('- It does not run migrations.')
++lines.push('- It does not modify production data.')
++lines.push('- A `FAIL` result means review/remediation is required before applying a security migration blindly.')
++
++fs.writeFileSync(reportPath, lines.join('\n') + '\n')
++
++if (!jsonOnly) {
++  console.log('\nAIWAKU DATABASE AUDIT')
++  console.log('=====================')
++  console.log(`Source : ${path.relative(ROOT, sourcePath)}`)
++  console.log(`Status : ${status}`)
++  console.log(`Tables : ${counts.tables}`)
++  console.log(`Funcs  : ${counts.functions}`)
++  console.log(`Policy : ${counts.policies}`)
++  console.log(`RLS    : ${counts.rls}`)
++  console.log(`Index  : ${counts.indexes}`)
++  console.log(`Trigger: ${counts.triggers} (text snapshot only)`)
++  console.log('')
++  for (const f of findings) {
++    console.log(`[${f.severity}] ${f.code}: ${f.message}`)
++    for (const e of f.evidence.slice(0, 12)) console.log(`  - ${e}`)
++  }
++  console.log('')
++  console.log(`Report: ${path.relative(ROOT, reportPath)}`)
++  console.log(`JSON  : ${path.relative(ROOT, jsonPath)}`)
++}
++
++if (strict && (summary.CRITICAL || summary.HIGH)) process.exit(1)
++process.exit(0)
+-- 
+2.47.3
+
