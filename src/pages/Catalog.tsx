@@ -3,15 +3,18 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useMenus } from '../hooks/useMenus'
 import { useTenantAuth } from '../context/TenantAuthContext'
-import { defaultTenant } from '../lib/storage'
+import { useTenant } from '../hooks/useTenant'
 import { Search, Store } from 'lucide-react'
 
 export function Catalog() {
   const { slug } = useParams()
   const { tenantId } = useTenantAuth()
   const { menus } = useMenus(tenantId ?? undefined)
-  const { membership } = useTenantAuth()
-  const tenant = membership?.tenant ? { ...defaultTenant, ...membership.tenant } : defaultTenant
+  // membership.tenant hanya berisi {id,slug,name} (lihat TenantAuthContext),
+  // tidak ada wa_number - sebelumnya di-merge dengan defaultTenant sehingga
+  // wa_number SELALU jatuh ke nomor demo "62812xxxx". useTenant() fetch baris
+  // tenant lengkap (termasuk wa_number asli) langsung dari Supabase.
+  const { tenant } = useTenant()
   const [q, setQ] = useState('')
 
   // Katalog publik: hanya tampilkan menu is_active (stok tersedia), bukan semua menu internal

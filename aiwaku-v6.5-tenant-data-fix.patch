@@ -1,0 +1,701 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index 433736b..18074ab 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,6 +1,7 @@
+ 
+ import { useState, useEffect } from 'react'
+ import { useTenantAuth } from './context/TenantAuthContext'
++import { useTenant } from './hooks/useTenant'
+ import { HashRouter, Routes, Route, useParams, Navigate } from 'react-router-dom'
+ import { Header } from './components/Header'
+ import { Sidebar } from './components/Sidebar'
+@@ -30,21 +31,16 @@ function Layout() {
+   const { slug } = useParams()
+   const [mobileOpen, setMobileOpen] = useState(false)
+   const { refresh, membership, loading } = useTenantAuth()
++  const { tenant } = useTenant()
+   useEffect(() => { if (slug) void refresh(slug) }, [slug, refresh])
+   if (slug && !loading && membership?.tenant?.slug !== slug) return <div className="p-6">Tenant tidak ditemukan atau akun tidak memiliki akses ke tenant ini.</div>
+ 
+   return (
+     <AuthTenantGuard><div className="min-h-screen bg-[#F6F7F8] text-slate-900 antialiased">
+-      <Header onToggleMobile={()=>setMobileOpen(!mobileOpen)} aiActive={true} />
++      <Header onToggleMobile={()=>setMobileOpen(!mobileOpen)} tenant={tenant} />
+       <div className="mx-auto max-w-[1600px] flex min-h-[calc(100vh-56px)]">
+         <Sidebar mobileOpen={mobileOpen} onClose={()=>setMobileOpen(false)} />
+         <main className="flex-1 min-w-0 bg-[#F6F7F8]">
+-          {slug && (
+-            <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-[11px] flex justify-between">
+-              <span>Multi-tenant: app.aiwaku.id/t/{slug} • Tenant isolation by tenant_id • Supabase Realtime enabled</span>
+-              <span className="font-mono">/{slug}</span>
+-            </div>
+-          )}
+           <Routes>
+             <Route index element={<Dashboard />} />
+             <Route path="menu" element={<MenuStock />} />
+diff --git a/src/components/Header.tsx b/src/components/Header.tsx
+index 1189c53..3dee849 100644
+--- a/src/components/Header.tsx
++++ b/src/components/Header.tsx
+@@ -1,28 +1,103 @@
++import { useMemo, useState } from 'react'
++import { useNavigate, useParams } from 'react-router-dom'
+ import { Menu, Search } from 'lucide-react'
+ import { format } from 'date-fns'
+ import { id as idLocale } from 'date-fns/locale'
++import type { Tenant } from '../types'
+ 
+-export function Header({ onToggleMobile, aiActive }: { onToggleMobile: () => void, aiActive: boolean }) {
++// Halaman-halaman utama untuk kotak "Cari" - sebelumnya kotak ini render
++// tapi tidak punya onChange/onSubmit sama sekali (dead UI).
++const SEARCHABLE_PAGES = [
++  { label: 'Beranda', path: '' },
++  { label: 'Jualan (POS)', path: '/pos' },
++  { label: 'Menu & Stok', path: '/menu' },
++  { label: 'Persediaan', path: '/inventory' },
++  { label: 'Kitchen (KDS)', path: '/kds' },
++  { label: 'Meja', path: '/tables' },
++  { label: 'Booking', path: '/bookings' },
++  { label: 'AIWAKU (Admin)', path: '/admin' },
++  { label: 'Pelanggan', path: '/customers' },
++  { label: 'Bisnis (Laporan)', path: '/reports' },
++  { label: 'Kalender', path: '/calendar' },
++  { label: 'Katalog', path: '/catalog' },
++  { label: 'Invoice & Struk', path: '/invoices' },
++  { label: 'Live Chat', path: '/livechat' },
++  { label: 'Pengaturan', path: '/settings' },
++]
++
++// Placeholder demo dari lib/storage.ts - kalau nomor WA tenant masih ini
++// atau kosong, bot WA jelas belum dikonfigurasi beneran.
++function isRealWaNumber(wa?: string) {
++  if (!wa) return false
++  const digits = wa.replace(/[^0-9]/g, '')
++  return digits.length >= 8 && !/x/i.test(wa)
++}
++
++export function Header({ onToggleMobile, tenant }: { onToggleMobile: () => void, tenant?: Tenant | null }) {
+   const now = new Date()
++  const navigate = useNavigate()
++  const { slug } = useParams()
++  const base = slug ? `/t/${slug}` : ''
++  const [query, setQuery] = useState('')
++  const [open, setOpen] = useState(false)
++
++  const results = useMemo(() => {
++    const q = query.trim().toLowerCase()
++    if (!q) return []
++    return SEARCHABLE_PAGES.filter(p => p.label.toLowerCase().includes(q)).slice(0, 6)
++  }, [query])
++
++  const goTo = (path: string) => {
++    navigate(`${base}${path}` || '/')
++    setQuery('')
++    setOpen(false)
++  }
++
++  // Bot WA dianggap aktif kalau tenant sudah punya wa_number asli (bukan
++  // placeholder demo/kosong). Sebelumnya badge ini selalu "AI aktif" hardcode
++  // walau bot belum dikonfigurasi sama sekali.
++  const aiActive = isRealWaNumber(tenant?.wa_number)
++  const displayName = tenant?.name || 'aiwaku'
++  const avatarLetter = (tenant?.owner_name || tenant?.name || 'A').trim().charAt(0).toUpperCase() || 'A'
++
+   return (
+     <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-xl border-b border-slate-200/80 h-[64px] flex items-center justify-between px-4 md:px-6">
+       <div className="flex items-center gap-3 min-w-0">
+         <button onClick={onToggleMobile} aria-label="Buka menu" className="md:hidden p-2 -ml-2 rounded-xl hover:bg-slate-100"><Menu size={19} /></button>
+         <div className="flex items-center gap-2.5 min-w-0">
+           <img src="/logo.png" alt="AIWAKU" className="h-8 w-8 object-contain rounded-xl" />
+-          <div className="leading-none">
+-            <div className="font-extrabold tracking-tight text-slate-950">aiwaku</div>
+-            <div className="hidden sm:block text-[9px] text-slate-400 mt-1">AI-native business OS</div>
++          <div className="leading-none min-w-0">
++            <div className="font-extrabold tracking-tight text-slate-950 truncate max-w-[180px] sm:max-w-none">{displayName}</div>
++            <div className="hidden sm:block text-[9px] text-slate-400 mt-1">{tenant ? 'by aiwaku' : 'AI-native business OS'}</div>
+           </div>
+         </div>
+       </div>
+       <div className="flex items-center gap-2">
+-        <button className="hidden md:flex items-center gap-2 h-9 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[11px] text-slate-500 hover:bg-white hover:border-slate-300" aria-label="Cari">
+-          <Search size={14} /> <span>Cari apa saja...</span><kbd className="ml-4 rounded-md bg-white border px-1.5 py-0.5 text-[9px]">⌘ K</kbd>
+-        </button>
+-        <div className="hidden sm:flex items-center gap-1.5 rounded-full bg-emerald-50 text-emerald-700 px-2.5 h-8 text-[10px] font-bold"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {aiActive ? 'AI aktif' : 'AI jeda'}</div>
++        <div className="relative hidden md:block">
++          <div className="flex items-center gap-2 h-9 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[11px] text-slate-500 focus-within:bg-white focus-within:border-slate-300">
++            <Search size={14} />
++            <input
++              value={query}
++              onChange={e => { setQuery(e.target.value); setOpen(true) }}
++              onFocus={() => setOpen(true)}
++              onBlur={() => setTimeout(() => setOpen(false), 120)}
++              onKeyDown={e => { if (e.key === 'Enter' && results[0]) goTo(results[0].path) }}
++              placeholder="Cari halaman..."
++              aria-label="Cari halaman"
++              className="bg-transparent outline-none w-[130px] placeholder:text-slate-400"
++            />
++          </div>
++          {open && results.length > 0 && (
++            <div className="absolute right-0 mt-1 w-[220px] rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
++              {results.map(r => (
++                <button key={r.path} onMouseDown={() => goTo(r.path)} className="w-full text-left px-3 py-2 text-[12px] text-slate-700 hover:bg-slate-50">{r.label}</button>
++              ))}
++            </div>
++          )}
++        </div>
++        <div className={`hidden sm:flex items-center gap-1.5 rounded-full px-2.5 h-8 text-[10px] font-bold ${aiActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}><span className={`w-1.5 h-1.5 rounded-full ${aiActive ? 'bg-emerald-500' : 'bg-slate-400'}`} /> {aiActive ? 'AI aktif' : 'AI belum diatur'}</div>
+         <div className="hidden lg:block text-[10px] text-slate-400 px-2">{format(now, 'dd MMM yyyy', { locale: idLocale })}</div>
+-        <button className="w-9 h-9 rounded-xl bg-slate-900 text-white grid place-items-center font-bold text-[11px]" aria-label="Profil">A</button>
++        <button className="w-9 h-9 rounded-xl bg-slate-900 text-white grid place-items-center font-bold text-[11px]" aria-label="Profil">{avatarLetter}</button>
+       </div>
+     </header>
+   )
+diff --git a/src/hooks/useBookings.ts b/src/hooks/useBookings.ts
+index 0c1118d..752a703 100644
+--- a/src/hooks/useBookings.ts
++++ b/src/hooks/useBookings.ts
+@@ -5,29 +5,24 @@ import { supabase, isSupabaseEnabled, subscribeToTable } from '../lib/supabase'
+ 
+ const STORAGE_KEY = 'aiwaku_v5_bookings'
+ 
+-// Deterministic pseudo-random: slot yang sama selalu punya status yang sama
+-// (tidak berubah-ubah setiap refresh seperti Math.random())
+-function hashCode(s: string): number {
+-  let h = 0
+-  for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0 }
+-  return Math.abs(h)
+-}
+-
+-function generateSlots(date: string, tenantId: string): BookingSlot[] {
+-  const fields = ['Lapangan 1','Lapangan 2','Lapangan 3']
++// Template jam operasional per lapangan. Ini hanya kerangka slot yang
++// BISA dipesan (semuanya 'available' sampai ada booking asli) - bukan
++// data transaksi. Sebelumnya slot ini di-hash jadi status 'booked' palsu
++// (dengan nama customer "Booked" hardcoded) seolah-olah itu data real.
++function generateTemplateSlots(date: string, tenantId: string): BookingSlot[] {
++  const fields = ['Lapangan 1', 'Lapangan 2', 'Lapangan 3']
+   const hours = [
+-    {start:'07:00', end:'08:00', price: 150000},
+-    {start:'08:00', end:'09:00', price: 150000},
+-    {start:'09:00', end:'10:00', price: 150000},
+-    {start:'10:00', end:'11:00', price: 180000},
+-    {start:'18:00', end:'19:00', price: 250000},
+-    {start:'19:00', end:'20:00', price: 250000},
+-    {start:'20:00', end:'21:00', price: 250000},
++    { start: '07:00', end: '08:00', price: 150000 },
++    { start: '08:00', end: '09:00', price: 150000 },
++    { start: '09:00', end: '10:00', price: 150000 },
++    { start: '10:00', end: '11:00', price: 180000 },
++    { start: '18:00', end: '19:00', price: 250000 },
++    { start: '19:00', end: '20:00', price: 250000 },
++    { start: '20:00', end: '21:00', price: 250000 },
+   ]
+   const slots: BookingSlot[] = []
+-  fields.forEach(field=>{
+-    hours.forEach(h=>{
+-      const booked = hashCode(`${date}|${field}|${h.start}`) % 10 < 3
++  fields.forEach(field => {
++    hours.forEach(h => {
+       slots.push({
+         id: `${date}_${field}_${h.start}`,
+         tenant_id: tenantId,
+@@ -35,9 +30,9 @@ function generateSlots(date: string, tenantId: string): BookingSlot[] {
+         start: h.start,
+         end: h.end,
+         field,
+-        customer_name: booked ? 'Booked' : '',
++        customer_name: '',
+         customer_wa: '',
+-        status: booked ? 'booked' : 'available',
++        status: 'available',
+         price: h.price,
+         created_at: new Date().toISOString()
+       })
+@@ -46,15 +41,52 @@ function generateSlots(date: string, tenantId: string): BookingSlot[] {
+   return slots
+ }
+ 
++// Baris booking dari Supabase memakai nama kolom tabel (start_time/end_time/
++// field_no), berbeda dari bentuk BookingSlot di client (start/end/field).
++// Sebelumnya baris mentah ini langsung dipakai sebagai BookingSlot ("as any"),
++// jadi field/start/end selalu undefined begitu ada booking asli - merusak
++// seluruh grid. Fungsi ini menormalkan nama kolom.
++function mapDbRow(row: any): BookingSlot {
++  return {
++    id: row.id,
++    tenant_id: row.tenant_id,
++    date: row.date,
++    start: row.start_time ?? row.start,
++    end: row.end_time ?? row.end,
++    field: row.field_no ?? row.field,
++    customer_id: row.customer_id ?? undefined,
++    customer_name: row.customer_name ?? '',
++    customer_wa: row.customer_wa ?? '',
++    status: row.status,
++    order_id: row.order_id ?? undefined,
++    price: row.price ?? 0,
++    created_at: row.created_at,
++  }
++}
++
++// Gabungkan booking asli (dari Supabase) ke atas template slot kosong,
++// dicocokkan lewat field+start, bukan menimpa seluruh array.
++function mergeBookedRows(template: BookingSlot[], bookedRows: BookingSlot[]): BookingSlot[] {
++  const byKey = new Map(bookedRows.map(b => [`${b.field}|${b.start}`, b]))
++  return template.map(slot => {
++    const real = byKey.get(`${slot.field}|${slot.start}`)
++    return real && real.status === 'booked' ? { ...slot, ...real, id: real.id } : slot
++  })
++}
++
+ function loadSlots(date: string, tenantId: string): BookingSlot[] {
++  const template = generateTemplateSlots(date, tenantId)
+   try {
+     const raw = localStorage.getItem(`${STORAGE_KEY}_${tenantId}_${date}`)
+     if (raw) {
+       const parsed = JSON.parse(raw) as BookingSlot[]
+-      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].date === date) return parsed
++      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].date === date) {
++        const booked = parsed.filter(s => s.status === 'booked')
++        return booked.length ? mergeBookedRows(template, booked) : template
++      }
+     }
+   } catch {}
+-  return generateSlots(date, tenantId)
++  return template
+ }
+ 
+ export function useBookings(tenantId: string, date: string) {
+@@ -78,23 +110,29 @@ export function useBookings(tenantId: string, date: string) {
+ 
+   useEffect(() => {
+     if (!isSupabaseEnabled()) return
+-    supabase!.from('bookings').select('*').eq('tenant_id', tenantId).eq('date', date).then(({data})=>{
+-      if (data && data.length>0) setSlots(data as any)
+-    })
+-    const sub = subscribeToTable('bookings', tenantId, (payload)=>{
+-      if (payload.new?.date === date) {
+-        setSlots(prev=>{
+-          const idx = prev.findIndex(s=>s.id===payload.new.id)
+-          if (idx>=0) {
+-            const copy = [...prev]
+-            copy[idx]=payload.new as BookingSlot
+-            return copy
+-          }
+-          return [payload.new as BookingSlot, ...prev]
++    let cancelled = false
++    supabase!.from('bookings').select('*').eq('tenant_id', tenantId).eq('date', date).eq('status', 'booked')
++      .then(({ data }) => {
++        if (cancelled || !data) return
++        const booked = (data as any[]).map(mapDbRow)
++        setSlots(prev => {
++          const template = prev.length ? prev : generateTemplateSlots(date, tenantId)
++          return mergeBookedRows(template, booked)
+         })
+-      }
++      })
++    const sub = subscribeToTable('bookings', tenantId, (payload) => {
++      const row = payload.new?.date ? mapDbRow(payload.new) : null
++      if (!row || row.date !== date) return
++      setSlots(prev => {
++        const template = prev.length ? prev : generateTemplateSlots(date, tenantId)
++        if (row.status !== 'booked') {
++          // Booking dibatalkan -> kembalikan slot ke available
++          return template.map(s => s.field === row.field && s.start === row.start ? { ...s, id: `${date}_${s.field}_${s.start}`, status: 'available' as const, customer_name: '', customer_wa: '' } : s)
++        }
++        return mergeBookedRows(template, [row])
++      })
+     })
+-    return () => sub.unsubscribe()
++    return () => { cancelled = true; sub.unsubscribe() }
+   }, [tenantId, date])
+ 
+   const bookSlot = async (id: string, customerName: string, customerWa: string) => {
+@@ -140,5 +178,5 @@ export function useBookings(tenantId: string, date: string) {
+     return true
+   }
+ 
+-  return { slots, bookSlot, cancelSlot, refresh: ()=> setSlots(generateSlots(date, tenantId)) }
++  return { slots, bookSlot, cancelSlot, refresh: () => setSlots(loadSlots(date, tenantId)) }
+ }
+diff --git a/src/hooks/useCustomers.ts b/src/hooks/useCustomers.ts
+index 4aac253..c1c8593 100644
+--- a/src/hooks/useCustomers.ts
++++ b/src/hooks/useCustomers.ts
+@@ -2,20 +2,19 @@ import { useState, useEffect } from 'react'
+ import type { Customer } from '../types'
+ import { supabase, isSupabaseEnabled, subscribeToTable } from '../lib/supabase'
+ 
+-const demoCustomers = (tenantId: string): Customer[] => [
+-  { id: 'c1', tenant_id: tenantId, name: 'Rina', wa: '081234567890', total_orders: 5, total_spent: 925000, last_order_at: new Date().toISOString(), tags: ['VIP','Bakery'], created_at: new Date().toISOString() },
+-  { id: 'c2', tenant_id: tenantId, name: 'Andi', wa: '081234567891', total_orders: 2, total_spent: 370000, tags: ['Padel'], created_at: new Date().toISOString() },
+-]
+-
+ export function useCustomers(tenantId?: string) {
+   const safeTenantId = tenantId || ''
+   const storageKey = `aiwaku_v5_customers_${safeTenantId}`
++  // Sebelumnya fallback ke 2 customer demo ("Rina"/"Andi" dengan total_spent
++  // karangan) untuk TENANT MANAPUN yang belum punya cache localStorage -
++  // lalu tersimpan dan terhitung di Reports/Customers seolah data asli.
++  // Kalau memang belum ada data, tampilkan kosong, bukan data karangan.
+   const [customers, setCustomers] = useState<Customer[]>(() => {
+     try {
+       const raw = localStorage.getItem(storageKey)
+       if (raw) return (JSON.parse(raw) as Customer[]).filter(c => c.tenant_id === safeTenantId)
+     } catch {}
+-    return demoCustomers(safeTenantId)
++    return []
+   })
+ 
+   useEffect(() => {
+diff --git a/src/hooks/useOrders.ts b/src/hooks/useOrders.ts
+new file mode 100644
+index 0000000..d3631eb
+--- /dev/null
++++ b/src/hooks/useOrders.ts
+@@ -0,0 +1,44 @@
++import { useState, useEffect } from 'react'
++import type { Order } from '../types'
++import { loadOrders, saveOrders } from '../lib/storage'
++import { supabase, isSupabaseEnabled, subscribeToTable } from '../lib/supabase'
++
++// Orders dibuat oleh POS dan bot WhatsApp langsung ke Supabase (lihat
++// lib/ordersApi.ts / wa-webhook), bukan lewat saveOrders() ke localStorage.
++// Dashboard/Reports/Calendar sebelumnya memanggil loadOrders() saja, yang
++// membaca kunci localStorage yang tidak pernah ditulis siapa pun -> selalu
++// kosong. Hook ini menyamakan pola dengan useMenus/useCustomers: localStorage
++// dipakai sebagai cache tampilan awal, lalu selalu ditimpa oleh data
++// Supabase (sumber kebenaran) begitu tersedia, plus realtime sync.
++export function useOrders(tenantId?: string) {
++  const id = tenantId || ''
++  const [orders, setOrders] = useState<Order[]>(() => loadOrders(id || undefined))
++
++  useEffect(() => {
++    let cancelled = false
++    if (!id) { setOrders([]); return }
++    setOrders(loadOrders(id))
++
++    if (!isSupabaseEnabled()) return
++    supabase!.from('orders').select('*').eq('tenant_id', id).order('created_at', { ascending: false })
++      .then(({ data, error }) => {
++        if (!cancelled && !error && data) {
++          setOrders(data as Order[])
++          saveOrders(data as Order[], id)
++        }
++      })
++
++    const sub = subscribeToTable('orders', id, (payload) => {
++      if (payload.eventType === 'INSERT') setOrders(prev => [payload.new as Order, ...prev.filter(o => o.id !== payload.new.id)])
++      if (payload.eventType === 'UPDATE') setOrders(prev => prev.map(o => o.id === payload.new.id ? payload.new as Order : o))
++      if (payload.eventType === 'DELETE') setOrders(prev => prev.filter(o => o.id !== payload.old.id))
++    })
++    return () => { cancelled = true; sub.unsubscribe() }
++  }, [id])
++
++  useEffect(() => {
++    if (id) saveOrders(orders, id)
++  }, [orders, id])
++
++  return { orders }
++}
+diff --git a/src/hooks/useTenant.ts b/src/hooks/useTenant.ts
+index af5e14d..2bb83c6 100644
+--- a/src/hooks/useTenant.ts
++++ b/src/hooks/useTenant.ts
+@@ -10,25 +10,36 @@ export function useTenant() {
+   const slug = params.slug || 'bakery-sari'
+   const [tenant, setTenant] = useState<Tenant>(defaultTenant)
+   const [loading, setLoading] = useState(true)
++  // Supabase aktif tapi slug tidak ditemukan di tabel tenants -> jangan diam-diam
++  // tampilkan data tenant demo "Bakery Sari" seolah itu tenant yang diminta.
++  const [notFound, setNotFound] = useState(false)
+ 
+   useEffect(() => {
++    let cancelled = false
+     async function load() {
+       setLoading(true)
++      setNotFound(false)
+       if (isSupabaseEnabled()) {
+         const t = await getTenantSupabase(slug)
++        if (cancelled) return
+         if (t) setTenant(t as any)
++        else setNotFound(true)
+       } else {
++        // Mode offline/dev tanpa Supabase: tenant ID diturunkan konsisten dari
++        // slug, nama dari slug apa adanya - tidak menempelkan kota yang dikarang
++        // (sebelumnya selalu " - Bekasi" walau tokonya di kota lain).
+         setTenant({
+           ...defaultTenant,
+           id: getTenantIdFromSlug(slug),
+           slug,
+-          name: slug.split('-').map(s=>s.charAt(0).toUpperCase()+s.slice(1)).join(' ') + ' - Bekasi'
++          name: slug.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ')
+         })
+       }
+-      setLoading(false)
++      if (!cancelled) setLoading(false)
+     }
+     load()
++    return () => { cancelled = true }
+   }, [slug])
+ 
+-  return { tenant, slug, loading }
++  return { tenant, slug, loading, notFound }
+ }
+diff --git a/src/pages/Bookings.tsx b/src/pages/Bookings.tsx
+index cfa5c43..db1fbf3 100644
+--- a/src/pages/Bookings.tsx
++++ b/src/pages/Bookings.tsx
+@@ -9,8 +9,8 @@ export function Bookings() {
+   const { tenantId } = useTenantAuth()
+   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+   const { slots, bookSlot, cancelSlot } = useBookings(tenantId || '', date)
+-  const [customerName, setCustomerName] = useState('Andi')
+-  const [customerWa, setCustomerWa] = useState('0812xxxx')
++  const [customerName, setCustomerName] = useState('')
++  const [customerWa, setCustomerWa] = useState('')
+   if (!tenantId) return null
+ 
+   const fields = Array.from(new Set(slots.map(s=>s.field)))
+@@ -54,7 +54,11 @@ export function Bookings() {
+                       if (!slot) return <td key={field} className="p-2 text-center">-</td>
+                       return (
+                         <td key={field} className="p-1">
+-                          <button onClick={()=> slot.status==='available' ? bookSlot(slot.id, customerName, customerWa) : cancelSlot(slot.id)} className={`w-full h-12 rounded-xl text-[10px] font-semibold border ${slot.status==='available' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'}`}>
++                          <button
++                            disabled={slot.status==='available' && (!customerName.trim() || !customerWa.trim())}
++                            title={slot.status==='available' && (!customerName.trim() || !customerWa.trim()) ? 'Isi nama dan WA customer dulu' : undefined}
++                            onClick={()=> slot.status==='available' ? bookSlot(slot.id, customerName, customerWa) : cancelSlot(slot.id)}
++                            className={`w-full h-12 rounded-xl text-[10px] font-semibold border disabled:opacity-40 disabled:cursor-not-allowed ${slot.status==='available' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'}`}>
+                             <div>{slot.status==='available' ? 'Available' : slot.customer_name}</div>
+                             <div className="font-mono">Rp{slot.price.toLocaleString('id-ID')}</div>
+                           </button>
+@@ -69,7 +73,7 @@ export function Bookings() {
+         </div>
+       </div>
+ 
+-      <div className="bg-slate-900 text-white rounded-2xl p-3 text-[11px]">✅ Real Booking Engine: slot per lapangan per jam, status available/booked/blocked, customer_name + wa, price dynamic (pagi 150rb malam 250rb), realtime Supabase jika env diisi, localStorage fallback. Multi-tenant: tenant_id filter.</div>
++      <div className="bg-slate-900 text-white rounded-2xl p-3 text-[11px]">🏸 Slot yang berwarna hijau tersedia, merah berarti sudah dibooking. Perubahan tersinkron real-time lewat Supabase kalau env sudah diisi.</div>
+     </div>
+   )
+ }
+diff --git a/src/pages/Calendar.tsx b/src/pages/Calendar.tsx
+index 2771b27..53d9ebd 100644
+--- a/src/pages/Calendar.tsx
++++ b/src/pages/Calendar.tsx
+@@ -1,11 +1,12 @@
+ 
+-import { useState, useMemo } from 'react'
++import { useState, useMemo, useEffect } from 'react'
+ import { useParams } from 'react-router-dom'
+ import { useTenantAuth } from '../context/TenantAuthContext'
+ import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
+-import { loadOrders } from '../lib/storage'
++import { useOrders } from '../hooks/useOrders'
++import { supabase, isSupabaseEnabled } from '../lib/supabase'
+ import { syncOrderToGoogleCalendar } from '../lib/googleCalendar'
+-import type { Order, BookingSlot } from '../types'
++import type { BookingSlot, Order } from '../types'
+ 
+ 
+ 
+@@ -13,26 +14,60 @@ function toDateKey(d: Date) {
+   return d.toISOString().split('T')[0]
+ }
+ 
+-function getBookingsForDate(dateKey: string, tenantId: string): BookingSlot[] {
+-  try {
+-    const raw = localStorage.getItem(`aiwaku_v5_bookings_${tenantId}_${dateKey}`)
+-    if (!raw) return []
+-    const slots: BookingSlot[] = JSON.parse(raw)
+-    return Array.isArray(slots) ? slots.filter(s => s.status === 'booked') : []
+-  } catch { return [] }
++// Baris booking Supabase pakai nama kolom start_time/end_time/field_no,
++// beda dari bentuk BookingSlot di client (start/end/field).
++function mapBookingRow(row: any): BookingSlot {
++  return {
++    id: row.id,
++    tenant_id: row.tenant_id,
++    date: row.date,
++    start: row.start_time,
++    end: row.end_time,
++    field: row.field_no,
++    customer_name: row.customer_name ?? '',
++    customer_wa: row.customer_wa ?? '',
++    status: row.status,
++    price: row.price ?? 0,
++    created_at: row.created_at,
++  }
+ }
+ 
+ export function Calendar() {
+   const { slug } = useParams()
+   const { tenantId, membership } = useTenantAuth()
+-  if (!tenantId) return null
+   const [cursor, setCursor] = useState(() => {
+     const now = new Date()
+     return new Date(now.getFullYear(), now.getMonth(), 1)
+   })
+   const [selectedDate, setSelectedDate] = useState<string | null>(null)
++  const [bookingsByDate, setBookingsByDate] = useState<Record<string, BookingSlot[]>>({})
++
++  const { orders } = useOrders(tenantId ?? undefined)
++
++  // Ambil booking asli sebulan penuh dari Supabase (bukan hanya cache
++  // localStorage tanggal yang kebetulan sudah pernah dibuka di halaman Booking).
++  useEffect(() => {
++    if (!tenantId || !isSupabaseEnabled()) { setBookingsByDate({}); return }
++    let cancelled = false
++    const year = cursor.getFullYear()
++    const month = cursor.getMonth()
++    const start = toDateKey(new Date(year, month, 1))
++    const end = toDateKey(new Date(year, month + 1, 0))
++    supabase!.from('bookings').select('*').eq('tenant_id', tenantId).eq('status', 'booked')
++      .gte('date', start).lte('date', end)
++      .then(({ data, error }) => {
++        if (cancelled || error || !data) return
++        const map: Record<string, BookingSlot[]> = {}
++        ;(data as any[]).map(mapBookingRow).forEach(b => {
++          if (!map[b.date]) map[b.date] = []
++          map[b.date].push(b)
++        })
++        setBookingsByDate(map)
++      })
++    return () => { cancelled = true }
++  }, [tenantId, cursor])
+ 
+-  const orders = useMemo(() => loadOrders(tenantId), [tenantId])
++  if (!tenantId) return null
+ 
+   const monthLabel = cursor.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+ 
+@@ -65,7 +100,7 @@ export function Calendar() {
+ 
+   const todayKey = toDateKey(new Date())
+   const selectedOrders = selectedDate ? (ordersByDate[selectedDate] || []) : []
+-  const selectedBookings = selectedDate ? getBookingsForDate(selectedDate, tenantId) : []
++  const selectedBookings = selectedDate ? (bookingsByDate[selectedDate] || []) : []
+ 
+   return (
+     <div className="p-4 md:p-6 max-w-[1100px] mx-auto space-y-4">
+@@ -87,7 +122,7 @@ export function Calendar() {
+             if (!c.date) return <div key={i} className="min-h-[80px] border-b border-r bg-slate-50/50" />
+             const key = toDateKey(c.date)
+             const dayOrders = ordersByDate[key] || []
+-            const dayBookings = getBookingsForDate(key, tenantId)
++            const dayBookings = bookingsByDate[key] || []
+             const isToday = key === todayKey
+             const isSelected = key === selectedDate
+             return (
+@@ -136,7 +171,7 @@ export function Calendar() {
+         </div>
+       )}
+ 
+-      <div className="bg-slate-900 text-white rounded-2xl p-3 text-[11px]">📅 Data diambil real dari order (pickup_time) + booking engine yang tersimpan di localStorage (atau Supabase kalau env diisi) - bukan lagi halaman placeholder. Klik tanggal untuk lihat detail dan buka link Google Calendar.</div>
++      <div className="bg-slate-900 text-white rounded-2xl p-3 text-[11px]">📅 Data diambil real dari order (pickup_time) dan booking Supabase untuk bulan yang sedang dilihat. Klik tanggal untuk lihat detail dan buka link Google Calendar.</div>
+     </div>
+   )
+ }
+diff --git a/src/pages/Catalog.tsx b/src/pages/Catalog.tsx
+index 512847b..f287e90 100644
+--- a/src/pages/Catalog.tsx
++++ b/src/pages/Catalog.tsx
+@@ -3,15 +3,18 @@ import { useState } from 'react'
+ import { useParams } from 'react-router-dom'
+ import { useMenus } from '../hooks/useMenus'
+ import { useTenantAuth } from '../context/TenantAuthContext'
+-import { defaultTenant } from '../lib/storage'
++import { useTenant } from '../hooks/useTenant'
+ import { Search, Store } from 'lucide-react'
+ 
+ export function Catalog() {
+   const { slug } = useParams()
+   const { tenantId } = useTenantAuth()
+   const { menus } = useMenus(tenantId ?? undefined)
+-  const { membership } = useTenantAuth()
+-  const tenant = membership?.tenant ? { ...defaultTenant, ...membership.tenant } : defaultTenant
++  // membership.tenant hanya berisi {id,slug,name} (lihat TenantAuthContext),
++  // tidak ada wa_number - sebelumnya di-merge dengan defaultTenant sehingga
++  // wa_number SELALU jatuh ke nomor demo "62812xxxx". useTenant() fetch baris
++  // tenant lengkap (termasuk wa_number asli) langsung dari Supabase.
++  const { tenant } = useTenant()
+   const [q, setQ] = useState('')
+ 
+   // Katalog publik: hanya tampilkan menu is_active (stok tersedia), bukan semua menu internal
+diff --git a/src/pages/Dashboard.tsx b/src/pages/Dashboard.tsx
+index 4c1803e..aa3e9a0 100644
+--- a/src/pages/Dashboard.tsx
++++ b/src/pages/Dashboard.tsx
+@@ -2,7 +2,7 @@ import { useMemo, type ReactNode } from 'react'
+ import { Link, useParams } from 'react-router-dom'
+ import { ArrowUpRight, CalendarPlus, ChevronRight, AlertCircle, PackageCheck, Plus, ShoppingCart, Sparkles, UsersRound } from 'lucide-react'
+ import { useMenus } from '../hooks/useMenus'
+-import { loadOrders } from '../lib/storage'
++import { useOrders } from '../hooks/useOrders'
+ import { useTenantAuth } from '../context/TenantAuthContext'
+ import { format, isSameDay, subDays } from 'date-fns'
+ import { id as idLocale } from 'date-fns/locale'
+@@ -13,7 +13,7 @@ export function Dashboard() {
+   const { slug } = useParams()
+   const { tenantId } = useTenantAuth()
+   const { menus } = useMenus(tenantId ?? undefined)
+-  const orders = loadOrders(tenantId ?? undefined)
++  const { orders } = useOrders(tenantId ?? undefined)
+   const now = new Date()
+   const todayOrders = useMemo(() => orders.filter(o => isSameDay(new Date(o.created_at), now) && o.status !== 'batal'), [orders])
+   const revenue = todayOrders.reduce((sum, o) => sum + o.total, 0)
+diff --git a/src/pages/Invoice.tsx b/src/pages/Invoice.tsx
+index cf5cee0..459c04e 100644
+--- a/src/pages/Invoice.tsx
++++ b/src/pages/Invoice.tsx
+@@ -20,8 +20,8 @@ export function Invoice() {
+   const { menus } = useMenus(tenantId ?? undefined)
+   const [orders, setOrders] = useState<Order[]>([])
+   const [selected, setSelected] = useState<Order | null>(null)
+-  const [customer, setCustomer] = useState('Rina')
+-  const [wa, setWa] = useState('081234567890')
++  const [customer, setCustomer] = useState('')
++  const [wa, setWa] = useState('')
+   const [payment, setPayment] = useState<Payment | null>(null)
+   const [calendarLink, setCalendarLink] = useState<string | null>(null)
+   const [sheetStatus, setSheetStatus] = useState<string | null>(null)
+@@ -42,6 +42,7 @@ export function Invoice() {
+   const createInvoice = async () => {
+     const bakeryMenu = menus.find(m => m.is_active)
+     if (!bakeryMenu) { setFormError('Tambahkan menu dulu sebelum bikin invoice.'); return }
++    if (!customer.trim() || !wa.trim()) { setFormError('Isi nama dan WA customer dulu sebelum bikin invoice.'); return }
+     setFormError(null)
+     const pickup = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+     pickup.setHours(15, 0, 0, 0)
+diff --git a/src/pages/Reports.tsx b/src/pages/Reports.tsx
+index 53de5be..19cc3fa 100644
+--- a/src/pages/Reports.tsx
++++ b/src/pages/Reports.tsx
+@@ -2,7 +2,7 @@
+ import { useMemo } from 'react'
+ import { useParams } from 'react-router-dom'
+ import { useTenantAuth } from '../context/TenantAuthContext'
+-import { loadOrders } from '../lib/storage'
++import { useOrders } from '../hooks/useOrders'
+ import { useCustomers } from '../hooks/useCustomers'
+ import { TrendingUp, Package, Users, Wallet } from 'lucide-react'
+ 
+@@ -20,7 +20,7 @@ export function Reports() {
+   const { slug } = useParams()
+   const { tenantId } = useTenantAuth()
+   const { customers } = useCustomers(tenantId ?? undefined)
+-  const orders = useMemo(() => loadOrders(tenantId ?? undefined), [tenantId])
++  const { orders } = useOrders(tenantId ?? undefined)
+ 
+   const totalRevenue = orders.reduce((s, o) => s + o.total, 0)
+   const paidRevenue = orders.filter(o => o.status === 'lunas').reduce((s, o) => s + o.total, 0)
+@@ -122,7 +122,7 @@ export function Reports() {
+         </>
+       )}
+ 
+-      <div className="bg-slate-900 text-white rounded-2xl p-3 text-[11px]">📊 Laporan dihitung real-time dari data order (localStorage/Supabase), bukan angka dummy. Sinkron ke Google Sheets tersedia di halaman Invoice dan Pengaturan.</div>
++      <div className="bg-slate-900 text-white rounded-2xl p-3 text-[11px]">📊 Laporan dihitung real-time dari data order tenant ini di Supabase. Sinkron ke Google Sheets tersedia di halaman Invoice dan Pengaturan.</div>
+     </div>
+   )
+ }

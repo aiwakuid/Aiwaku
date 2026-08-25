@@ -2,20 +2,19 @@ import { useState, useEffect } from 'react'
 import type { Customer } from '../types'
 import { supabase, isSupabaseEnabled, subscribeToTable } from '../lib/supabase'
 
-const demoCustomers = (tenantId: string): Customer[] => [
-  { id: 'c1', tenant_id: tenantId, name: 'Rina', wa: '081234567890', total_orders: 5, total_spent: 925000, last_order_at: new Date().toISOString(), tags: ['VIP','Bakery'], created_at: new Date().toISOString() },
-  { id: 'c2', tenant_id: tenantId, name: 'Andi', wa: '081234567891', total_orders: 2, total_spent: 370000, tags: ['Padel'], created_at: new Date().toISOString() },
-]
-
 export function useCustomers(tenantId?: string) {
   const safeTenantId = tenantId || ''
   const storageKey = `aiwaku_v5_customers_${safeTenantId}`
+  // Sebelumnya fallback ke 2 customer demo ("Rina"/"Andi" dengan total_spent
+  // karangan) untuk TENANT MANAPUN yang belum punya cache localStorage -
+  // lalu tersimpan dan terhitung di Reports/Customers seolah data asli.
+  // Kalau memang belum ada data, tampilkan kosong, bukan data karangan.
   const [customers, setCustomers] = useState<Customer[]>(() => {
     try {
       const raw = localStorage.getItem(storageKey)
       if (raw) return (JSON.parse(raw) as Customer[]).filter(c => c.tenant_id === safeTenantId)
     } catch {}
-    return demoCustomers(safeTenantId)
+    return []
   })
 
   useEffect(() => {

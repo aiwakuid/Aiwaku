@@ -2,7 +2,7 @@
 import { useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTenantAuth } from '../context/TenantAuthContext'
-import { loadOrders } from '../lib/storage'
+import { useOrders } from '../hooks/useOrders'
 import { useCustomers } from '../hooks/useCustomers'
 import { TrendingUp, Package, Users, Wallet } from 'lucide-react'
 
@@ -20,7 +20,7 @@ export function Reports() {
   const { slug } = useParams()
   const { tenantId } = useTenantAuth()
   const { customers } = useCustomers(tenantId ?? undefined)
-  const orders = useMemo(() => loadOrders(tenantId ?? undefined), [tenantId])
+  const { orders } = useOrders(tenantId ?? undefined)
 
   const totalRevenue = orders.reduce((s, o) => s + o.total, 0)
   const paidRevenue = orders.filter(o => o.status === 'lunas').reduce((s, o) => s + o.total, 0)
@@ -122,7 +122,7 @@ export function Reports() {
         </>
       )}
 
-      <div className="bg-slate-900 text-white rounded-2xl p-3 text-[11px]">📊 Laporan dihitung real-time dari data order (localStorage/Supabase), bukan angka dummy. Sinkron ke Google Sheets tersedia di halaman Invoice dan Pengaturan.</div>
+      <div className="bg-slate-900 text-white rounded-2xl p-3 text-[11px]">📊 Laporan dihitung real-time dari data order tenant ini di Supabase. Sinkron ke Google Sheets tersedia di halaman Invoice dan Pengaturan.</div>
     </div>
   )
 }

@@ -5,29 +5,24 @@ import { supabase, isSupabaseEnabled, subscribeToTable } from '../lib/supabase'
 
 const STORAGE_KEY = 'aiwaku_v5_bookings'
 
-// Deterministic pseudo-random: slot yang sama selalu punya status yang sama
-// (tidak berubah-ubah setiap refresh seperti Math.random())
-function hashCode(s: string): number {
-  let h = 0
-  for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0 }
-  return Math.abs(h)
-}
-
-function generateSlots(date: string, tenantId: string): BookingSlot[] {
-  const fields = ['Lapangan 1','Lapangan 2','Lapangan 3']
+// Template jam operasional per lapangan. Ini hanya kerangka slot yang
+// BISA dipesan (semuanya 'available' sampai ada booking asli) - bukan
+// data transaksi. Sebelumnya slot ini di-hash jadi status 'booked' palsu
+// (dengan nama customer "Booked" hardcoded) seolah-olah itu data real.
+function generateTemplateSlots(date: string, tenantId: string): BookingSlot[] {
+  const fields = ['Lapangan 1', 'Lapangan 2', 'Lapangan 3']
   const hours = [
-    {start:'07:00', end:'08:00', price: 150000},
-    {start:'08:00', end:'09:00', price: 150000},
-    {start:'09:00', end:'10:00', price: 150000},
-    {start:'10:00', end:'11:00', price: 180000},
-    {start:'18:00', end:'19:00', price: 250000},
-    {start:'19:00', end:'20:00', price: 250000},
-    {start:'20:00', end:'21:00', price: 250000},
+    { start: '07:00', end: '08:00', price: 150000 },
+    { start: '08:00', end: '09:00', price: 150000 },
+    { start: '09:00', end: '10:00', price: 150000 },
+    { start: '10:00', end: '11:00', price: 180000 },
+    { start: '18:00', end: '19:00', price: 250000 },
+    { start: '19:00', end: '20:00', price: 250000 },
+    { start: '20:00', end: '21:00', price: 250000 },
   ]
   const slots: BookingSlot[] = []
-  fields.forEach(field=>{
-    hours.forEach(h=>{
-      const booked = hashCode(`${date}|${field}|${h.start}`) % 10 < 3
+  fields.forEach(field => {
+    hours.forEach(h => {
       slots.push({
         id: `${date}_${field}_${h.start}`,
         tenant_id: tenantId,
@@ -35,9 +30,9 @@ function generateSlots(date: string, tenantId: string): BookingSlot[] {
         start: h.start,
         end: h.end,
         field,
-        customer_name: booked ? 'Booked' : '',
+        customer_name: '',
         customer_wa: '',
-        status: booked ? 'booked' : 'available',
+        status: 'available',
         price: h.price,
         created_at: new Date().toISOString()
       })
@@ -46,15 +41,52 @@ function generateSlots(date: string, tenantId: string): BookingSlot[] {
   return slots
 }
 
+// Baris booking dari Supabase memakai nama kolom tabel (start_time/end_time/
+// field_no), berbeda dari bentuk BookingSlot di client (start/end/field).
+// Sebelumnya baris mentah ini langsung dipakai sebagai BookingSlot ("as any"),
+// jadi field/start/end selalu undefined begitu ada booking asli - merusak
+// seluruh grid. Fungsi ini menormalkan nama kolom.
+function mapDbRow(row: any): BookingSlot {
+  return {
+    id: row.id,
+    tenant_id: row.tenant_id,
+    date: row.date,
+    start: row.start_time ?? row.start,
+    end: row.end_time ?? row.end,
+    field: row.field_no ?? row.field,
+    customer_id: row.customer_id ?? undefined,
+    customer_name: row.customer_name ?? '',
+    customer_wa: row.customer_wa ?? '',
+    status: row.status,
+    order_id: row.order_id ?? undefined,
+    price: row.price ?? 0,
+    created_at: row.created_at,
+  }
+}
+
+// Gabungkan booking asli (dari Supabase) ke atas template slot kosong,
+// dicocokkan lewat field+start, bukan menimpa seluruh array.
+function mergeBookedRows(template: BookingSlot[], bookedRows: BookingSlot[]): BookingSlot[] {
+  const byKey = new Map(bookedRows.map(b => [`${b.field}|${b.start}`, b]))
+  return template.map(slot => {
+    const real = byKey.get(`${slot.field}|${slot.start}`)
+    return real && real.status === 'booked' ? { ...slot, ...real, id: real.id } : slot
+  })
+}
+
 function loadSlots(date: string, tenantId: string): BookingSlot[] {
+  const template = generateTemplateSlots(date, tenantId)
   try {
     const raw = localStorage.getItem(`${STORAGE_KEY}_${tenantId}_${date}`)
     if (raw) {
       const parsed = JSON.parse(raw) as BookingSlot[]
-      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].date === date) return parsed
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].date === date) {
+        const booked = parsed.filter(s => s.status === 'booked')
+        return booked.length ? mergeBookedRows(template, booked) : template
+      }
     }
   } catch {}
-  return generateSlots(date, tenantId)
+  return template
 }
 
 export function useBookings(tenantId: string, date: string) {
@@ -78,23 +110,29 @@ export function useBookings(tenantId: string, date: string) {
 
   useEffect(() => {
     if (!isSupabaseEnabled()) return
-    supabase!.from('bookings').select('*').eq('tenant_id', tenantId).eq('date', date).then(({data})=>{
-      if (data && data.length>0) setSlots(data as any)
-    })
-    const sub = subscribeToTable('bookings', tenantId, (payload)=>{
-      if (payload.new?.date === date) {
-        setSlots(prev=>{
-          const idx = prev.findIndex(s=>s.id===payload.new.id)
-          if (idx>=0) {
-            const copy = [...prev]
-            copy[idx]=payload.new as BookingSlot
-            return copy
-          }
-          return [payload.new as BookingSlot, ...prev]
+    let cancelled = false
+    supabase!.from('bookings').select('*').eq('tenant_id', tenantId).eq('date', date).eq('status', 'booked')
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        const booked = (data as any[]).map(mapDbRow)
+        setSlots(prev => {
+          const template = prev.length ? prev : generateTemplateSlots(date, tenantId)
+          return mergeBookedRows(template, booked)
         })
-      }
+      })
+    const sub = subscribeToTable('bookings', tenantId, (payload) => {
+      const row = payload.new?.date ? mapDbRow(payload.new) : null
+      if (!row || row.date !== date) return
+      setSlots(prev => {
+        const template = prev.length ? prev : generateTemplateSlots(date, tenantId)
+        if (row.status !== 'booked') {
+          // Booking dibatalkan -> kembalikan slot ke available
+          return template.map(s => s.field === row.field && s.start === row.start ? { ...s, id: `${date}_${s.field}_${s.start}`, status: 'available' as const, customer_name: '', customer_wa: '' } : s)
+        }
+        return mergeBookedRows(template, [row])
+      })
     })
-    return () => sub.unsubscribe()
+    return () => { cancelled = true; sub.unsubscribe() }
   }, [tenantId, date])
 
   const bookSlot = async (id: string, customerName: string, customerWa: string) => {
@@ -140,5 +178,5 @@ export function useBookings(tenantId: string, date: string) {
     return true
   }
 
-  return { slots, bookSlot, cancelSlot, refresh: ()=> setSlots(generateSlots(date, tenantId)) }
+  return { slots, bookSlot, cancelSlot, refresh: () => setSlots(loadSlots(date, tenantId)) }
 }

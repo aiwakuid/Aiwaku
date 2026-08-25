@@ -9,8 +9,8 @@ export function Bookings() {
   const { tenantId } = useTenantAuth()
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const { slots, bookSlot, cancelSlot } = useBookings(tenantId || '', date)
-  const [customerName, setCustomerName] = useState('Andi')
-  const [customerWa, setCustomerWa] = useState('0812xxxx')
+  const [customerName, setCustomerName] = useState('')
+  const [customerWa, setCustomerWa] = useState('')
   if (!tenantId) return null
 
   const fields = Array.from(new Set(slots.map(s=>s.field)))
@@ -54,7 +54,11 @@ export function Bookings() {
                       if (!slot) return <td key={field} className="p-2 text-center">-</td>
                       return (
                         <td key={field} className="p-1">
-                          <button onClick={()=> slot.status==='available' ? bookSlot(slot.id, customerName, customerWa) : cancelSlot(slot.id)} className={`w-full h-12 rounded-xl text-[10px] font-semibold border ${slot.status==='available' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'}`}>
+                          <button
+                            disabled={slot.status==='available' && (!customerName.trim() || !customerWa.trim())}
+                            title={slot.status==='available' && (!customerName.trim() || !customerWa.trim()) ? 'Isi nama dan WA customer dulu' : undefined}
+                            onClick={()=> slot.status==='available' ? bookSlot(slot.id, customerName, customerWa) : cancelSlot(slot.id)}
+                            className={`w-full h-12 rounded-xl text-[10px] font-semibold border disabled:opacity-40 disabled:cursor-not-allowed ${slot.status==='available' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'}`}>
                             <div>{slot.status==='available' ? 'Available' : slot.customer_name}</div>
                             <div className="font-mono">Rp{slot.price.toLocaleString('id-ID')}</div>
                           </button>
@@ -69,7 +73,7 @@ export function Bookings() {
         </div>
       </div>
 
-      <div className="bg-slate-900 text-white rounded-2xl p-3 text-[11px]">✅ Real Booking Engine: slot per lapangan per jam, status available/booked/blocked, customer_name + wa, price dynamic (pagi 150rb malam 250rb), realtime Supabase jika env diisi, localStorage fallback. Multi-tenant: tenant_id filter.</div>
+      <div className="bg-slate-900 text-white rounded-2xl p-3 text-[11px]">🏸 Slot yang berwarna hijau tersedia, merah berarti sudah dibooking. Perubahan tersinkron real-time lewat Supabase kalau env sudah diisi.</div>
     </div>
   )
 }
