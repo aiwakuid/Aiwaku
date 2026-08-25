@@ -1,11 +1,14 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { timingSafeEqual } from '../_shared/timingSafeEqual.ts'
 
 serve(async (req) => {
   try {
     if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 })
     const secret = Deno.env.get('AIWAKU_INTERNAL_FUNCTION_SECRET')
-    if (!secret || req.headers.get('x-aiwaku-internal-secret') !== secret) return new Response('Forbidden', { status: 403 })
+    // AIWAKU V6.8: dulu pakai `!==` biasa — rentan timing attack karena
+    // perbandingan string JS berhenti di karakter pertama yang beda.
+    if (!secret || !timingSafeEqual(req.headers.get('x-aiwaku-internal-secret'), secret)) return new Response('Forbidden', { status: 403 })
     const { orderId, tenantId, customerName } = await req.json()
     if (!orderId || !tenantId) throw new Error('orderId dan tenantId wajib')
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
